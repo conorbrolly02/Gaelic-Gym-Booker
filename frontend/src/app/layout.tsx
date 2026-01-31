@@ -11,7 +11,7 @@
  * App Router in Next.js uses this layout for all routes.
  */
 
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
@@ -25,6 +25,16 @@ const inter = Inter({
 });
 
 /**
+ * Viewport Configuration
+ * Separate export required in Next.js 16+
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1, // Prevent zoom on input focus on iOS
+};
+
+/**
  * Page Metadata
  * Defines the default metadata for all pages
  * Individual pages can override these values
@@ -36,12 +46,6 @@ export const metadata: Metadata = {
   },
   description: "Book your gym time slots at Eoghan Rua CLG",
   keywords: ["gym", "booking", "eoghan rua", "clg", "fitness"],
-  // Viewport settings for mobile responsiveness
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-    maximumScale: 1, // Prevent zoom on input focus on iOS
-  },
 };
 
 /**
