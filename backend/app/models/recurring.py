@@ -1,0 +1,155 @@
+"""
+RecurringPattern model for repeating bookings.
+
+Recurring patterns define a template for generating multiple bookings.
+For example, "Every Monday and Wednesday at 6pm for 1 hour".
+"""
+
+import uuid
+from datetime import datetime
+from sqlalchemy import Column, Integer, Date, Time, Boolean, DateTime, ForeignKey, Enum as SQLEnum, ARRAY
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+import enum
+
+from app.database import Base
+
+
+class PatternType(str, enum.Enum):
+    """
+    Enum defining recurring pattern types.
+    
+    - DAILY: Repeats every day
+    - WEEKLY: Repeats on specific days of the week
+    
+    Note: Values must match the PostgreSQL enum values (uppercase)
+    """
+    DAILY = "DAILY"
+    WEEKLY = "WEEKLY"
+
+
+class RecurringPattern(Base):
+    """
+    RecurringPattern model for repeating bookings.
+    
+    Instead of storing hundreds of future booking rows,
+    we store the pattern and generate bookings on demand.
+    
+    Attributes:
+        id: Unique pattern identifier
+        member_id: Member this pattern belongs to
+        pattern_type: daily or weekly
+        days_of_week: Array of day numbers (0=Sunday, 6=Saturday)
+        start_time: Time of day the booking starts
+        duration_mins: How long each booking lasts
+        valid_from: First date this pattern applies
+        valid_until: Last date this pattern applies
+        is_active: Whether pattern is still active
+    
+    Relationships:
+        member: The member who owns this pattern
+        bookings: All bookings generated from this pattern
+    """
+    __tablename__ = "recurring_patterns"
+    
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        comment="Unique pattern identifier"
+    )
+    
+    # Which member this pattern belongs to
+    member_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("members.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+        comment="Member who owns this pattern"
+    )
+    
+    # Type of recurrence
+    pattern_type = Column(
+        SQLEnum(PatternType),
+        nullable=False,
+        comment="daily or weekly recurrence"
+    )
+    
+    # For weekly patterns: which days of the week
+    # Array of integers: 0=Sunday, 1=Monday, ..., 6=Saturday
+    # For daily patterns, this is empty
+    days_of_week = Column(
+        ARRAY(Integer),
+        nullable=False,
+        default=[],
+        comment="Days of week for weekly patterns (0=Sun, 6=Sat)"
+    )
+    
+    # Time of day the booking starts (without date)
+    start_time = Column(
+        Time,
+        nullable=False,
+        comment="Start time of day for bookings"
+    )
+    
+    # Duration in minutes
+    duration_mins = Column(
+        Integer,
+        nullable=False,
+        comment="Duration of each booking in minutes"
+    )
+    
+    # Date range for the pattern
+    valid_from = Column(
+        Date,
+        nullable=False,
+        comment="First date pattern applies"
+    )
+    
+    valid_until = Column(
+        Date,
+        nullable=False,
+        comment="Last date pattern applies"
+    )
+    
+    # Soft delete - deactivated patterns stop generating new bookings
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        index=True,
+        comment="Whether pattern is active"
+    )
+    
+    # Timestamps
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+        comment="When pattern was created"
+    )
+    
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        comment="Last update timestamp"
+    )
+    
+    # Relationships
+    member = relationship(
+        "Member",
+        back_populates="recurring_patterns",
+        lazy="selectin"
+    )
+    
+    bookings = relationship(
+        "Booking",
+        back_populates="recurring_pattern",
+        lazy="selectin"
+    )
+    
+    def __repr__(self):
+        """String representation for debugging."""
+        return f"<RecurringPattern {self.pattern_type.value} from {self.valid_from} to {self.valid_until}>"

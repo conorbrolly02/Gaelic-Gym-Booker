@@ -1,0 +1,457 @@
+"""
+Admin API routes.
+
+Handles administrative operations for managing members and bookings.
+All routes require admin authentication.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
+from datetime import datetime
+from uuid import UUID
+
+from app.database import get_db
+from app.schemas.member import MemberWithUserResponse
+from app.schemas.booking import BookingWithMemberResponse, AdminBookingCreate
+from app.services.member_service import MemberService
+from app.services.booking_service import BookingService
+from app.auth.dependencies import require_admin
+from app.models.user import User
+from app.models.member import MembershipStatus
+from app.models.booking import BookingStatus
+
+router = APIRouter(
+    prefix="/admin",
+    tags=["Admin"],
+)
+
+
+# ============================================
+# Member Management
+# ============================================
+
+@router.get(
+    "/members",
+    response_model=dict,
+    summary="List all members",
+)
+async def list_members(
+    status: Optional[str] = Query(None, description="Filter by status: pending, active, suspended"),
+    search: Optional[str] = Query(None, description="Search by name or email"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all members with optional filters.
+    
+    Admin can filter by membership status and search by name/email.
+    """
+    service = MemberService(db)
+    
+    # Convert status string to enum (accepts lowercase input)
+    status_enum = None
+    if status:
+        try:
+            status_enum = MembershipStatus(status.upper())
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid status",
+            )
+    
+    members, total = await service.list_members(
+        status=status_enum,
+        search=search,
+        page=page,
+        limit=limit,
+    )
+    
+    # Build response with user email included
+    member_list = []
+    for member in members:
+        member_list.append({
+            "id": str(member.id),
+            "user_id": str(member.user_id),
+            "email": member.user.email,
+            "full_name": member.full_name,
+            "phone": member.phone,
+            "membership_status": member.membership_status.value,
+            "approved_by": str(member.approved_by) if member.approved_by else None,
+            "approved_at": member.approved_at,
+            "created_at": member.created_at,
+            "updated_at": member.updated_at,
+        })
+    
+    return {
+        "members": member_list,
+        "total": total,
+        "page": page,
+        "limit": limit,
+    }
+
+
+@router.get(
+    "/members/{member_id}",
+    response_model=dict,
+    summary="Get member details",
+)
+async def get_member(
+    member_id: UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get detailed information about a specific member.
+    
+    Includes booking statistics.
+    """
+    service = MemberService(db)
+    
+    member = await service.get_member_by_id(member_id)
+    
+    if not member:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Member not found",
+        )
+    
+    # Get booking stats
+    stats = await service.get_member_stats(member_id)
+    
+    return {
+        "id": str(member.id),
+        "user_id": str(member.user_id),
+        "email": member.user.email,
+        "full_name": member.full_name,
+        "phone": member.phone,
+        "membership_status": member.membership_status.value,
+        "approved_by": str(member.approved_by) if member.approved_by else None,
+        "approved_at": member.approved_at,
+        "created_at": member.created_at,
+        "total_bookings": stats["total_bookings"],
+        "upcoming_bookings": stats["upcoming_bookings"],
+    }
+
+
+@router.patch(
+    "/members/{member_id}/approve",
+    response_model=dict,
+    summary="Approve a pending member",
+)
+async def approve_member(
+    member_id: UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Approve a member who is pending approval.
+    
+    Changes their status from 'pending' to 'active'.
+    """
+    service = MemberService(db)
+    
+    try:
+        member = await service.approve_member(
+            member_id=member_id,
+            approved_by=admin.id,
+        )
+        
+        return {
+            "id": str(member.id),
+            "membership_status": member.membership_status.value,
+            "approved_by": str(member.approved_by),
+            "approved_at": member.approved_at,
+            "message": "Member approved successfully",
+        }
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.patch(
+    "/members/{member_id}/suspend",
+    response_model=dict,
+    summary="Suspend a member",
+)
+async def suspend_member(
+    member_id: UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Suspend an active member.
+    
+    Suspended members cannot log in or make bookings.
+    """
+    service = MemberService(db)
+    
+    try:
+        member = await service.suspend_member(member_id)
+        
+        return {
+            "id": str(member.id),
+            "membership_status": member.membership_status.value,
+            "message": "Member suspended",
+        }
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.patch(
+    "/members/{member_id}/reactivate",
+    response_model=dict,
+    summary="Reactivate a suspended member",
+)
+async def reactivate_member(
+    member_id: UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reactivate a suspended member.
+    """
+    service = MemberService(db)
+    
+    try:
+        member = await service.reactivate_member(member_id)
+        
+        return {
+            "id": str(member.id),
+            "membership_status": member.membership_status.value,
+            "message": "Member reactivated",
+        }
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+# ============================================
+# Booking Management
+# ============================================
+
+@router.get(
+    "/bookings",
+    response_model=dict,
+    summary="List all bookings",
+)
+async def list_all_bookings(
+    member_id: Optional[UUID] = Query(None, description="Filter by member"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    from_date: Optional[datetime] = Query(None),
+    to_date: Optional[datetime] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all bookings across all members.
+    
+    Supports filtering by member, status, and date range.
+    """
+    service = BookingService(db)
+    
+    status_enum = None
+    if status:
+        try:
+            status_enum = BookingStatus(status.upper())
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid status",
+            )
+    
+    bookings, total = await service.list_all_bookings(
+        member_id=member_id,
+        status=status_enum,
+        from_date=from_date,
+        to_date=to_date,
+        page=page,
+        limit=limit,
+    )
+    
+    # Build response with member info
+    booking_list = []
+    for booking in bookings:
+        booking_list.append({
+            "id": str(booking.id),
+            "member_id": str(booking.member_id),
+            "member_name": booking.member.full_name if booking.member else "Unknown",
+            "member_email": booking.member.user.email if booking.member and booking.member.user else "Unknown",
+            "start_time": booking.start_time,
+            "end_time": booking.end_time,
+            "status": booking.status.value,
+            "recurring_pattern_id": str(booking.recurring_pattern_id) if booking.recurring_pattern_id else None,
+            "created_by": str(booking.created_by),
+            "created_at": booking.created_at,
+        })
+    
+    return {
+        "bookings": booking_list,
+        "total": total,
+        "page": page,
+        "limit": limit,
+    }
+
+
+@router.post(
+    "/bookings",
+    status_code=status.HTTP_201_CREATED,
+    response_model=dict,
+    summary="Create booking for a member",
+)
+async def create_booking_for_member(
+    booking_data: AdminBookingCreate,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create a booking on behalf of a member.
+    
+    Admin can book for any active member.
+    """
+    # Verify member exists and is active
+    member_service = MemberService(db)
+    member = await member_service.get_member_by_id(booking_data.member_id)
+    
+    if not member:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Member not found",
+        )
+    
+    if member.membership_status != MembershipStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Member is not active",
+        )
+    
+    booking_service = BookingService(db)
+    
+    try:
+        booking = await booking_service.create_booking(
+            member_id=booking_data.member_id,
+            start_time=booking_data.start_time,
+            end_time=booking_data.end_time,
+            created_by=admin.id,  # Admin is the creator
+        )
+        
+        return {
+            "id": str(booking.id),
+            "member_id": str(booking.member_id),
+            "start_time": booking.start_time,
+            "end_time": booking.end_time,
+            "status": booking.status.value,
+            "created_by": str(booking.created_by),
+            "message": "Booking created for member",
+        }
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )
+
+
+@router.delete(
+    "/bookings/{booking_id}",
+    response_model=dict,
+    summary="Cancel any booking",
+)
+async def admin_cancel_booking(
+    booking_id: UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Cancel any booking (admin override).
+    
+    Admin can cancel any member's booking.
+    """
+    service = BookingService(db)
+    
+    try:
+        booking = await service.cancel_booking(
+            booking_id=booking_id,
+            cancelled_by=admin.id,
+        )
+        
+        return {
+            "id": str(booking.id),
+            "status": booking.status.value,
+            "cancelled_by": str(booking.cancelled_by),
+            "cancelled_at": booking.cancelled_at,
+            "message": "Booking cancelled",
+        }
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+# ============================================
+# Dashboard Statistics
+# ============================================
+
+@router.get(
+    "/stats",
+    response_model=dict,
+    summary="Get dashboard statistics",
+)
+async def get_stats(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get overview statistics for the admin dashboard.
+    """
+    from sqlalchemy import select, func
+    from app.models.member import Member
+    from app.models.booking import Booking
+    
+    # Count members by status
+    total_members = await db.execute(select(func.count(Member.id)))
+    pending_members = await db.execute(
+        select(func.count(Member.id)).where(
+            Member.membership_status == MembershipStatus.PENDING
+        )
+    )
+    active_members = await db.execute(
+        select(func.count(Member.id)).where(
+            Member.membership_status == MembershipStatus.ACTIVE
+        )
+    )
+    
+    # Count bookings
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start.replace(hour=23, minute=59, second=59)
+    
+    bookings_today = await db.execute(
+        select(func.count(Booking.id)).where(
+            Booking.status == BookingStatus.CONFIRMED,
+            Booking.start_time >= today_start,
+            Booking.start_time <= today_end,
+        )
+    )
+    
+    return {
+        "total_members": total_members.scalar(),
+        "pending_approvals": pending_members.scalar(),
+        "active_members": active_members.scalar(),
+        "bookings_today": bookings_today.scalar(),
+    }

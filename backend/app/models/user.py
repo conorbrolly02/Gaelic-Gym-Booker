@@ -1,0 +1,124 @@
+"""
+User model for authentication.
+
+The User table handles authentication (email/password) and authorization (roles).
+It's separate from Member to keep auth concerns isolated from gym-specific data.
+"""
+
+import uuid
+from datetime import datetime
+from sqlalchemy import Column, String, Boolean, DateTime, Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+import enum
+
+from app.database import Base
+
+
+class UserRole(str, enum.Enum):
+    """
+    Enum defining user roles in the system.
+    
+    Using str as a mixin allows easy JSON serialization.
+    - MEMBER: Regular gym member, can book slots
+    - ADMIN: Administrator, can manage members and all bookings
+    
+    Note: Values must match the PostgreSQL enum values (uppercase)
+    """
+    MEMBER = "MEMBER"
+    ADMIN = "ADMIN"
+
+
+class User(Base):
+    """
+    User model for authentication and authorization.
+    
+    Attributes:
+        id: Unique identifier (UUID for security - no sequential guessing)
+        email: User's email address (unique, used for login)
+        password_hash: Bcrypt-hashed password (never store plain text!)
+        role: User's role (member or admin)
+        is_active: Soft delete flag (False = account disabled)
+        created_at: When the account was created
+        updated_at: When the account was last modified
+    
+    Relationships:
+        member: One-to-one relationship with Member profile
+    """
+    __tablename__ = "users"
+    
+    # Primary key using UUID for security
+    # UUID v4 is random, so attackers can't guess other user IDs
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        comment="Unique user identifier"
+    )
+    
+    # Email must be unique - used for login
+    email = Column(
+        String(255),
+        unique=True,
+        nullable=False,
+        index=True,  # Index for fast lookups during login
+        comment="User's email address for login"
+    )
+    
+    # Password hash - NEVER store plain text passwords!
+    # We use bcrypt which includes salt in the hash
+    password_hash = Column(
+        String(255),
+        nullable=False,
+        comment="Bcrypt-hashed password"
+    )
+    
+    # Role determines permissions throughout the app
+    role = Column(
+        SQLEnum(UserRole),
+        nullable=False,
+        default=UserRole.MEMBER,
+        comment="User role for authorization"
+    )
+    
+    # Soft delete flag - deactivated users can't log in
+    # Using soft delete preserves booking history
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        index=True,
+        comment="Whether the account is active"
+    )
+    
+    # Timestamps for auditing
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+        comment="When the user registered"
+    )
+    
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,  # Auto-update on changes
+        comment="Last modification time"
+    )
+    
+    # Relationship to Member profile
+    # uselist=False makes it one-to-one instead of one-to-many
+    # back_populates creates a bidirectional relationship
+    # foreign_keys specifies which FK to use (since Member has two FKs to User)
+    member = relationship(
+        "Member",
+        back_populates="user",
+        uselist=False,
+        lazy="selectin",  # Eager load member with user
+        foreign_keys="Member.user_id"  # Explicitly specify which FK
+    )
+    
+    def __repr__(self):
+        """String representation for debugging."""
+        return f"<User {self.email} ({self.role.value})>"
