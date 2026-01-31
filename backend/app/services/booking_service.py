@@ -188,18 +188,21 @@ class BookingService:
         """
         now = datetime.utcnow()
         
-        if end_time <= start_time:
+        start_naive = start_time.replace(tzinfo=None) if start_time.tzinfo else start_time
+        end_naive = end_time.replace(tzinfo=None) if end_time.tzinfo else end_time
+        
+        if end_naive <= start_naive:
             raise BookingError(
                 "End time must be after start time.",
                 BookingErrorCode.INVALID_TIME_RANGE
             )
         
-        duration_mins = (end_time - start_time).total_seconds() / 60
+        duration_mins = (end_naive - start_naive).total_seconds() / 60
         
         if not admin_override:
             min_start_time = now + timedelta(minutes=settings.MIN_BOOKING_LEAD_TIME_MINS)
-            if start_time < min_start_time:
-                if start_time < now:
+            if start_naive < min_start_time:
+                if start_naive < now:
                     raise BookingError(
                         "Cannot book a slot that has already started.",
                         BookingErrorCode.PAST_START_TIME
@@ -223,7 +226,7 @@ class BookingService:
                 )
             
             max_advance = now + timedelta(days=settings.MAX_BOOKING_ADVANCE_DAYS)
-            if start_time > max_advance:
+            if start_naive > max_advance:
                 raise BookingError(
                     f"Cannot book more than {settings.MAX_BOOKING_ADVANCE_DAYS} days in advance.",
                     BookingErrorCode.TOO_FAR_IN_ADVANCE

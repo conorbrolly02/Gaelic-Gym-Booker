@@ -185,7 +185,33 @@ API returns structured errors with machine-readable codes:
 4. **Recurring bookings**: Each instance independently validated; conflicts skipped
 5. **Admin booking for member**: Full validation unless override_rules=true
 
+## Testing
+
+### Backend Tests
+Run from `backend/` directory:
+```bash
+python -m pytest tests/ -v                    # Run all tests
+python -m pytest tests/test_booking_service.py -v  # Unit tests only
+python -m pytest --cov=app tests/             # With coverage
+```
+
+Test files:
+- `tests/test_booking_service.py` - Unit tests for booking validation
+- `tests/test_api_bookings.py` - API integration tests
+- `tests/test_api_admin.py` - Admin endpoint tests
+- `tests/test_api_auth.py` - Authentication tests
+
+Note: Full integration tests require PostgreSQL (SQLite doesn't support ARRAY type).
+
+### Frontend Tests
+See `frontend/TESTING.md` for Jest and Playwright test setup guide.
+
 ## Recent Changes
+
+- 2026-01-31: Added backend unit tests and API tests
+  - Booking service validation tests
+  - API integration tests for bookings, admin, auth
+  - Frontend testing documentation
 
 - 2026-01-31: Enhanced booking business rules
   - Single slot per member enforcement
