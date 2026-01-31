@@ -34,10 +34,10 @@ export default function HomePage() {
   return (
     <main className="flex-1 flex flex-col">
       {/* Hero Section */}
-      <section className="flex-1 flex items-center justify-center bg-gradient-to-br from-primary-600 to-primary-800 px-4 py-16">
+      <section className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-900 to-black px-4 py-16">
         <div className="max-w-4xl mx-auto text-center">
           {/* Logo */}
-          <div className="w-24 h-24 rounded-2xl flex items-center justify-center mx-auto mb-8 overflow-hidden bg-black">
+          <div className="w-24 h-24 rounded-2xl flex items-center justify-center mx-auto mb-8 overflow-hidden bg-white">
             <img
               src="/logo.jpeg"
               alt="Eoghan Rua CLG Logo"
