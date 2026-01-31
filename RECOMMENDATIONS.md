@@ -93,7 +93,7 @@ BEGIN:VEVENT
 DTSTART:${formatDateTime(booking.start_time)}
 DTEND:${formatDateTime(booking.end_time)}
 SUMMARY:Gym Session
-LOCATION:Gaelic Club Gym
+LOCATION:Eoghan Rua CLG Gym
 END:VEVENT
 END:VCALENDAR`;
 }

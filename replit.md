@@ -1,4 +1,4 @@
-# Gym Booking System - Gaelic Club
+# Gym Booking System - Eoghan Rua CLG
 
 ## Project Overview
 

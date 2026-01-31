@@ -36,26 +36,18 @@ export default function HomePage() {
       {/* Hero Section */}
       <section className="flex-1 flex items-center justify-center bg-gradient-to-br from-primary-600 to-primary-800 px-4 py-16">
         <div className="max-w-4xl mx-auto text-center">
-          {/* Logo/Icon */}
-          <div className="w-20 h-20 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-8">
-            <svg
-              className="w-12 h-12 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-              />
-            </svg>
+          {/* Logo */}
+          <div className="w-24 h-24 rounded-2xl flex items-center justify-center mx-auto mb-8 overflow-hidden bg-white">
+            <img
+              src="/logo.jpeg"
+              alt="Eoghan Rua CLG Logo"
+              className="w-20 h-20 object-contain"
+            />
           </div>
 
           {/* Title and description */}
           <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">
-            Gaelic Club Gym
+            Eoghan Rua CLG Gym
           </h1>
           <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
             Book your gym time slots easily. Stay fit, stay healthy, and enjoy 
@@ -135,7 +127,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="py-6 px-4 bg-gray-50 border-t border-gray-200">
         <p className="text-center text-sm text-gray-600">
-          &copy; {new Date().getFullYear()} Gaelic Club. All rights reserved.
+          &copy; {new Date().getFullYear()} Eoghan Rua CLG. All rights reserved.
         </p>
       </footer>
     </main>

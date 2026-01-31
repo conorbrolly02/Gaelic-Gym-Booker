@@ -31,11 +31,11 @@ const inter = Inter({
  */
 export const metadata: Metadata = {
   title: {
-    template: "%s | Gaelic Club Gym",
-    default: "Gaelic Club Gym Booking",
+    template: "%s | Eoghan Rua CLG Gym",
+    default: "Eoghan Rua CLG Gym Booking",
   },
-  description: "Book your gym time slots at the Gaelic Club",
-  keywords: ["gym", "booking", "gaelic club", "fitness"],
+  description: "Book your gym time slots at Eoghan Rua CLG",
+  keywords: ["gym", "booking", "eoghan rua", "clg", "fitness"],
   // Viewport settings for mobile responsiveness
   viewport: {
     width: "device-width",
