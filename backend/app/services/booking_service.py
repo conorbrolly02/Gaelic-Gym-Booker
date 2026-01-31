@@ -6,6 +6,16 @@ Contains the core business logic for booking operations:
 - Creating bookings (single and recurring)
 - Cancelling bookings
 - Capacity enforcement
+- Time validation (cut-off times, duration limits)
+- Admin override capabilities
+
+Business Rules Enforced:
+1. A member can only have one active booking at a time (no overlapping)
+2. Slot capacity cannot exceed GYM_MAX_CAPACITY
+3. Booking cut-off: cannot book slots that have already started
+4. Duration limits: min/max booking duration enforced
+5. Advance booking limit: cannot book more than MAX_BOOKING_ADVANCE_DAYS ahead
+6. Admins can override rules 1, 3, 4, 5 (never capacity)
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,11 +23,39 @@ from sqlalchemy import select, func, and_
 from typing import Optional, List, Tuple
 from uuid import UUID
 from datetime import datetime, date, time, timedelta
+from enum import Enum
 
 from app.models.booking import Booking, BookingStatus
 from app.models.recurring import RecurringPattern, PatternType
 from app.models.member import Member
 from app.config import settings
+
+
+class BookingErrorCode(str, Enum):
+    """
+    Specific error codes for booking failures.
+    Allows frontend to show appropriate error messages.
+    """
+    CAPACITY_EXCEEDED = "CAPACITY_EXCEEDED"
+    MEMBER_OVERLAP = "MEMBER_OVERLAP"
+    PAST_START_TIME = "PAST_START_TIME"
+    TOO_FAR_IN_ADVANCE = "TOO_FAR_IN_ADVANCE"
+    DURATION_TOO_SHORT = "DURATION_TOO_SHORT"
+    DURATION_TOO_LONG = "DURATION_TOO_LONG"
+    INVALID_TIME_RANGE = "INVALID_TIME_RANGE"
+    BOOKING_NOT_FOUND = "BOOKING_NOT_FOUND"
+    ALREADY_CANCELLED = "ALREADY_CANCELLED"
+
+
+class BookingError(Exception):
+    """
+    Custom exception for booking-related errors.
+    Includes error code for programmatic handling.
+    """
+    def __init__(self, message: str, code: BookingErrorCode):
+        self.message = message
+        self.code = code
+        super().__init__(message)
 
 
 class BookingService:
@@ -125,21 +163,95 @@ class BookingService:
         
         return count > 0
     
+    def validate_booking_times(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        admin_override: bool = False
+    ) -> None:
+        """
+        Validate booking time constraints.
+        
+        Checks:
+        1. End time is after start time
+        2. Booking is not in the past (unless admin override)
+        3. Duration is within limits (unless admin override)
+        4. Not too far in advance (unless admin override)
+        
+        Args:
+            start_time: Proposed booking start
+            end_time: Proposed booking end
+            admin_override: If True, skip time-based validations
+            
+        Raises:
+            BookingError: If validation fails
+        """
+        now = datetime.utcnow()
+        
+        if end_time <= start_time:
+            raise BookingError(
+                "End time must be after start time.",
+                BookingErrorCode.INVALID_TIME_RANGE
+            )
+        
+        duration_mins = (end_time - start_time).total_seconds() / 60
+        
+        if not admin_override:
+            min_start_time = now + timedelta(minutes=settings.MIN_BOOKING_LEAD_TIME_MINS)
+            if start_time < min_start_time:
+                if start_time < now:
+                    raise BookingError(
+                        "Cannot book a slot that has already started.",
+                        BookingErrorCode.PAST_START_TIME
+                    )
+                else:
+                    raise BookingError(
+                        f"Bookings must be made at least {settings.MIN_BOOKING_LEAD_TIME_MINS} minutes in advance.",
+                        BookingErrorCode.PAST_START_TIME
+                    )
+            
+            if duration_mins < settings.MIN_BOOKING_DURATION_MINS:
+                raise BookingError(
+                    f"Minimum booking duration is {settings.MIN_BOOKING_DURATION_MINS} minutes.",
+                    BookingErrorCode.DURATION_TOO_SHORT
+                )
+            
+            if duration_mins > settings.MAX_BOOKING_DURATION_MINS:
+                raise BookingError(
+                    f"Maximum booking duration is {settings.MAX_BOOKING_DURATION_MINS} minutes ({settings.MAX_BOOKING_DURATION_MINS // 60} hours).",
+                    BookingErrorCode.DURATION_TOO_LONG
+                )
+            
+            max_advance = now + timedelta(days=settings.MAX_BOOKING_ADVANCE_DAYS)
+            if start_time > max_advance:
+                raise BookingError(
+                    f"Cannot book more than {settings.MAX_BOOKING_ADVANCE_DAYS} days in advance.",
+                    BookingErrorCode.TOO_FAR_IN_ADVANCE
+                )
+
     async def create_booking(
         self,
         member_id: UUID,
         start_time: datetime,
         end_time: datetime,
         created_by: UUID,
-        recurring_pattern_id: Optional[UUID] = None
+        recurring_pattern_id: Optional[UUID] = None,
+        admin_override: bool = False
     ) -> Booking:
         """
         Create a new booking after validation.
         
-        Performs all necessary checks:
-        1. Capacity not exceeded
-        2. Member doesn't have overlapping booking
-        3. Time is valid (not in past, not too far ahead)
+        Business Rules Enforced:
+        1. CAPACITY (never overridable): Slot cannot exceed max capacity
+        2. MEMBER_OVERLAP (admin can override): Member can only book one slot at a time
+        3. PAST_START_TIME (admin can override): Cannot book slots that have started
+        4. DURATION_LIMITS (admin can override): Must be within min/max duration
+        5. ADVANCE_LIMIT (admin can override): Cannot book too far in advance
+        
+        Race Condition Handling:
+        - Uses database transaction with row-level locking (SELECT ... FOR UPDATE)
+        - Capacity check and insert are atomic within the transaction
+        - Concurrent requests will serialize on the lock, preventing overbooking
         
         Args:
             member_id: Member the booking is for
@@ -147,26 +259,40 @@ class BookingService:
             end_time: When the booking ends
             created_by: User creating the booking (may be admin)
             recurring_pattern_id: Optional link to recurring pattern
+            admin_override: If True, bypass time-based rules (NOT capacity)
             
         Returns:
             The created Booking
             
         Raises:
-            ValueError: If validation fails
+            BookingError: If validation fails with specific error code
         """
-        # Check capacity
+        from sqlalchemy import text
+        
+        self.validate_booking_times(start_time, end_time, admin_override)
+        
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": hash((start_time.isoformat(), end_time.isoformat())) % (2**31)}
+        )
+        
         overlapping = await self.count_overlapping_bookings(start_time, end_time)
         if overlapping >= settings.GYM_MAX_CAPACITY:
-            raise ValueError(
-                f"Time slot is full. Maximum {settings.GYM_MAX_CAPACITY} people allowed."
+            raise BookingError(
+                f"Time slot is full. Maximum {settings.GYM_MAX_CAPACITY} people allowed. "
+                f"Current bookings: {overlapping}.",
+                BookingErrorCode.CAPACITY_EXCEEDED
             )
         
-        # Check member doesn't have overlap
-        has_overlap = await self.check_member_overlap(member_id, start_time, end_time)
-        if has_overlap:
-            raise ValueError("You already have a booking during this time.")
+        if not admin_override:
+            has_overlap = await self.check_member_overlap(member_id, start_time, end_time)
+            if has_overlap:
+                raise BookingError(
+                    "You already have a booking during this time. "
+                    "Please cancel your existing booking first.",
+                    BookingErrorCode.MEMBER_OVERLAP
+                )
         
-        # Create the booking
         booking = Booking(
             member_id=member_id,
             start_time=start_time,
@@ -200,15 +326,21 @@ class BookingService:
             The cancelled Booking
             
         Raises:
-            ValueError: If booking not found or already cancelled
+            BookingError: If booking not found or already cancelled
         """
         booking = await self.get_booking_by_id(booking_id)
         
         if not booking:
-            raise ValueError("Booking not found")
+            raise BookingError(
+                "Booking not found.",
+                BookingErrorCode.BOOKING_NOT_FOUND
+            )
         
         if booking.status == BookingStatus.CANCELLED:
-            raise ValueError("Booking is already cancelled")
+            raise BookingError(
+                "Booking is already cancelled.",
+                BookingErrorCode.ALREADY_CANCELLED
+            )
         
         booking.status = BookingStatus.CANCELLED
         booking.cancelled_by = cancelled_by

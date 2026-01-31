@@ -151,7 +151,47 @@ Optional (with defaults):
 - `MAX_BOOKING_DURATION_MINS` - 480
 - `MAX_BOOKING_ADVANCE_DAYS` - 365
 
+## Booking Business Rules
+
+### Core Rules
+1. **Single Slot Per Member**: A member can only have one active booking at a time (no overlapping bookings)
+2. **Capacity Limit**: Maximum 20 people per time slot (NEVER overridable)
+3. **Booking Cut-off**: Cannot book slots that have already started
+4. **Duration Limits**: Minimum 30 minutes, maximum 8 hours
+5. **Advance Booking**: Cannot book more than 365 days ahead
+
+### Admin Override
+Admins can bypass rules 1, 3, 4, 5 using `override_rules=true` query parameter:
+- Create bookings for past times
+- Bypass member overlap check (allow double-booking)
+- Bypass duration limits
+- Book beyond advance limit
+
+**Capacity is NEVER overridable** - this is a safety constraint.
+
+### Error Codes
+API returns structured errors with machine-readable codes:
+- `CAPACITY_EXCEEDED`: Slot is full (20 people max)
+- `MEMBER_OVERLAP`: Member already has a booking during this time
+- `PAST_START_TIME`: Cannot book past start time
+- `TOO_FAR_IN_ADVANCE`: Beyond 365-day limit
+- `DURATION_TOO_SHORT/LONG`: Outside 30min-8hr range
+- `INVALID_TIME_RANGE`: End time before start time
+
+### Edge Cases Handled
+1. **Race conditions**: Database transaction ensures atomic capacity check + booking creation
+2. **Timezone handling**: All times stored in UTC, client handles display conversion
+3. **Cancelled bookings**: Don't count toward capacity or member overlap
+4. **Recurring bookings**: Each instance independently validated; conflicts skipped
+5. **Admin booking for member**: Full validation unless override_rules=true
+
 ## Recent Changes
+
+- 2026-01-31: Enhanced booking business rules
+  - Single slot per member enforcement
+  - Booking cut-off time validation
+  - Admin override capabilities
+  - Structured error responses with error codes
 
 - 2026-01-31: Next.js frontend implementation
   - App Router with TypeScript

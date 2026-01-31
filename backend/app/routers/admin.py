@@ -3,9 +3,16 @@ Admin API routes.
 
 Handles administrative operations for managing members and bookings.
 All routes require admin authentication.
+
+Admin Override Capabilities:
+- Create bookings for past times
+- Create bookings beyond advance limit
+- Bypass member overlap check
+- NEVER bypass capacity limits (safety constraint)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from datetime import datetime
@@ -15,11 +22,22 @@ from app.database import get_db
 from app.schemas.member import MemberWithUserResponse
 from app.schemas.booking import BookingWithMemberResponse, AdminBookingCreate
 from app.services.member_service import MemberService
-from app.services.booking_service import BookingService
+from app.services.booking_service import BookingService, BookingError, BookingErrorCode
 from app.auth.dependencies import require_admin
 from app.models.user import User
 from app.models.member import MembershipStatus
 from app.models.booking import BookingStatus
+
+
+def booking_error_response(error: BookingError, status_code: int = 409) -> JSONResponse:
+    """Create structured error response for booking errors."""
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "detail": error.message,
+            "error_code": error.code.value,
+        }
+    )
 
 router = APIRouter(
     prefix="/admin",
@@ -312,9 +330,26 @@ async def list_all_bookings(
     status_code=status.HTTP_201_CREATED,
     response_model=dict,
     summary="Create booking for a member",
+    responses={
+        409: {
+            "description": "Booking conflict (capacity exceeded)",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Time slot is full.",
+                        "error_code": "CAPACITY_EXCEEDED"
+                    }
+                }
+            }
+        }
+    }
 )
 async def create_booking_for_member(
     booking_data: AdminBookingCreate,
+    override_rules: bool = Query(
+        False,
+        description="Admin override: bypass time-based rules (NOT capacity)"
+    ),
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -322,8 +357,24 @@ async def create_booking_for_member(
     Create a booking on behalf of a member.
     
     Admin can book for any active member.
+    
+    Admin Override Capabilities (when override_rules=true):
+    - Create bookings for past times
+    - Create bookings beyond the advance booking limit
+    - Bypass member overlap check (allow double-booking)
+    - Bypass minimum/maximum duration limits
+    
+    NEVER Overridable:
+    - Capacity limits (safety constraint - max 20 people)
+    
+    Error Response Format:
+    ```json
+    {
+        "detail": "Human readable message",
+        "error_code": "MACHINE_READABLE_CODE"
+    }
+    ```
     """
-    # Verify member exists and is active
     member_service = MemberService(db)
     member = await member_service.get_member_by_id(booking_data.member_id)
     
@@ -346,7 +397,8 @@ async def create_booking_for_member(
             member_id=booking_data.member_id,
             start_time=booking_data.start_time,
             end_time=booking_data.end_time,
-            created_by=admin.id,  # Admin is the creator
+            created_by=admin.id,
+            admin_override=override_rules,
         )
         
         return {
@@ -356,14 +408,12 @@ async def create_booking_for_member(
             "end_time": booking.end_time,
             "status": booking.status.value,
             "created_by": str(booking.created_by),
+            "admin_override_used": override_rules,
             "message": "Booking created for member",
         }
     
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e),
-        )
+    except BookingError as e:
+        return booking_error_response(e, 409 if e.code == BookingErrorCode.CAPACITY_EXCEEDED else 400)
 
 
 @router.delete(
@@ -379,7 +429,7 @@ async def admin_cancel_booking(
     """
     Cancel any booking (admin override).
     
-    Admin can cancel any member's booking.
+    Admin can cancel any member's booking regardless of ownership.
     """
     service = BookingService(db)
     
@@ -394,14 +444,12 @@ async def admin_cancel_booking(
             "status": booking.status.value,
             "cancelled_by": str(booking.cancelled_by),
             "cancelled_at": booking.cancelled_at,
-            "message": "Booking cancelled",
+            "message": "Booking cancelled by admin",
         }
     
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    except BookingError as e:
+        status_code = 404 if e.code == BookingErrorCode.BOOKING_NOT_FOUND else 400
+        return booking_error_response(e, status_code)
 
 
 # ============================================

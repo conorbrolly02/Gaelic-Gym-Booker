@@ -7,9 +7,15 @@ Handles booking operations for authenticated members:
 - Cancelling bookings
 - Checking availability
 - Managing recurring bookings
+
+Error Responses:
+All booking errors return structured JSON with:
+- detail: Human-readable error message
+- error_code: Machine-readable code for frontend handling
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from datetime import datetime, date
@@ -27,10 +33,26 @@ from app.schemas.recurring import (
     RecurringPatternResponse,
     RecurringPatternCreateResponse,
 )
-from app.services.booking_service import BookingService
+from app.services.booking_service import BookingService, BookingError, BookingErrorCode
 from app.auth.dependencies import get_current_member
 from app.models.member import Member
 from app.models.booking import BookingStatus
+
+
+def booking_error_response(error: BookingError, status_code: int = 409) -> JSONResponse:
+    """
+    Create a structured error response for booking errors.
+    
+    Returns JSON with both human-readable message and error code
+    for programmatic handling by the frontend.
+    """
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "detail": error.message,
+            "error_code": error.code.value,
+        }
+    )
 
 router = APIRouter(
     prefix="/bookings",
@@ -117,6 +139,19 @@ async def check_availability(
     status_code=status.HTTP_201_CREATED,
     response_model=BookingResponse,
     summary="Create a new booking",
+    responses={
+        409: {
+            "description": "Booking conflict",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Time slot is full.",
+                        "error_code": "CAPACITY_EXCEEDED"
+                    }
+                }
+            }
+        }
+    }
 )
 async def create_booking(
     booking_data: BookingCreate,
@@ -126,11 +161,20 @@ async def create_booking(
     """
     Create a new gym booking.
     
-    Validates:
-    - Time slot has capacity
-    - Member doesn't have overlapping booking
-    - Booking is not in the past
-    - Duration doesn't exceed maximum
+    Business Rules Enforced:
+    - CAPACITY_EXCEEDED: Time slot has reached maximum capacity (20 people)
+    - MEMBER_OVERLAP: You already have a booking during this time
+    - PAST_START_TIME: Cannot book slots that have already started
+    - DURATION_TOO_SHORT/LONG: Duration must be 30 mins to 8 hours
+    - TOO_FAR_IN_ADVANCE: Cannot book more than 365 days ahead
+    
+    Error Response Format:
+    ```json
+    {
+        "detail": "Human readable message",
+        "error_code": "MACHINE_READABLE_CODE"
+    }
+    ```
     """
     service = BookingService(db)
     
@@ -140,14 +184,21 @@ async def create_booking(
             start_time=booking_data.start_time,
             end_time=booking_data.end_time,
             created_by=member.user_id,
+            admin_override=False,
         )
         return booking
     
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e),
-        )
+    except BookingError as e:
+        status_map = {
+            BookingErrorCode.CAPACITY_EXCEEDED: 409,
+            BookingErrorCode.MEMBER_OVERLAP: 409,
+            BookingErrorCode.PAST_START_TIME: 400,
+            BookingErrorCode.TOO_FAR_IN_ADVANCE: 400,
+            BookingErrorCode.DURATION_TOO_SHORT: 400,
+            BookingErrorCode.DURATION_TOO_LONG: 400,
+            BookingErrorCode.INVALID_TIME_RANGE: 400,
+        }
+        return booking_error_response(e, status_map.get(e.code, 409))
 
 
 @router.get(
@@ -202,7 +253,6 @@ async def cancel_booking(
     """
     service = BookingService(db)
     
-    # First check it exists and belongs to this member
     booking = await service.get_booking_by_id(booking_id)
     
     if not booking:
@@ -224,11 +274,8 @@ async def cancel_booking(
         )
         return cancelled
     
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    except BookingError as e:
+        return booking_error_response(e, 400)
 
 
 @router.post(

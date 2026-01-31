@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     # How far in advance bookings can be made (365 days)
     MAX_BOOKING_ADVANCE_DAYS: int = 365
     
+    # Minimum lead time for bookings in minutes (0 = can book up to start time)
+    # Set to 0 to allow last-minute bookings, or higher to require advance notice
+    MIN_BOOKING_LEAD_TIME_MINS: int = 0
+    
+    # Minimum booking duration in minutes
+    MIN_BOOKING_DURATION_MINS: int = 30
+    
     class Config:
         # Load from .env file if it exists (useful for local development)
         env_file = ".env"
