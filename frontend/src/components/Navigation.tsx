@@ -87,7 +87,7 @@ export default function Navigation() {
           <div className="flex items-center">
             <Link href="/dashboard" className="flex items-center gap-2">
               {/* Club logo */}
-              <div className="w-8 h-8 rounded-lg overflow-hidden">
+              <div className="w-8 h-8 rounded-lg overflow-hidden bg-black">
                 <img
                   src="/logo.jpeg"
                   alt="Eoghan Rua CLG"
