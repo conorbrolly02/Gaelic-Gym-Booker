@@ -59,16 +59,33 @@ app = FastAPI(
 
 # Configure CORS (Cross-Origin Resource Sharing)
 # This allows the Next.js frontend to call the API
+# Note: When allow_credentials=True, cannot use wildcard "*" for origins
+import os
+
+# Get the Replit domain from environment
+replit_domain = os.getenv("REPLIT_DEV_DOMAIN", "")
+
+# Build list of allowed origins
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+    "http://0.0.0.0:5000",
+]
+
+# Add Replit domains if available
+if replit_domain:
+    allowed_origins.extend([
+        f"https://{replit_domain}",
+        f"http://{replit_domain}",
+        f"https://{replit_domain}:5000",
+        f"http://{replit_domain}:5000",
+    ])
+
 app.add_middleware(
     CORSMiddleware,
-    # Allow requests from the frontend
-    # In production, replace with your actual frontend URL
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5000",
-        "http://0.0.0.0:5000",
-        "*",  # Allow all for development
-    ],
+    # Allow requests from specific origins (no wildcards with credentials)
+    allow_origins=allowed_origins,
     # Allow cookies to be sent with requests
     allow_credentials=True,
     # Allow all HTTP methods
