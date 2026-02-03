@@ -190,23 +190,46 @@ API returns structured errors with machine-readable codes:
 ### Backend Tests
 Run from `backend/` directory:
 ```bash
-python -m pytest tests/ -v                    # Run all tests
-python -m pytest tests/test_booking_service.py -v  # Unit tests only
-python -m pytest --cov=app tests/             # With coverage
+# Run all tests (requires running backend API)
+TEST_ADMIN_EMAIL=testadmin@test.com TEST_ADMIN_PASSWORD=TestAdmin123! python -m pytest tests/ -v
+
+# Run specific test suites
+python -m pytest tests/test_user_membership.py -v    # User & membership tests
+python -m pytest tests/test_booking_scenarios.py -v  # Booking scenario tests
+
+# With coverage
+python -m pytest --cov=app tests/
 ```
 
 Test files:
-- `tests/test_booking_service.py` - Unit tests for booking validation
-- `tests/test_api_bookings.py` - API integration tests
-- `tests/test_api_admin.py` - Admin endpoint tests
-- `tests/test_api_auth.py` - Authentication tests
+- `tests/test_user_membership.py` - User registration, authentication, access control (14 tests)
+- `tests/test_booking_scenarios.py` - Booking CRUD, capacity rules, edge cases (13 tests)
+- `tests/conftest.py` - Shared test fixtures and configuration
 
-Note: Full integration tests require PostgreSQL (SQLite doesn't support ARRAY type).
+**Test Categories:**
+1. **Membership Management** - Registration, pending status, duplicate email
+2. **Authentication** - Login, JWT expiry, invalid tokens, access control
+3. **Booking Happy Path** - Create, view, cancel bookings
+4. **Capacity Rules** - Full slot handling, race conditions
+5. **Edge Cases** - Past times, overlapping bookings, duration limits
+
+Note: Tests run against the actual API using httpx. Backend must be running.
 
 ### Frontend Tests
 See `frontend/TESTING.md` for Jest and Playwright test setup guide.
 
 ## Recent Changes
+
+- 2026-02-03: Added comprehensive booking scenario tests
+  - Happy path tests (booking creation, viewing, cancellation)
+  - Capacity rules tests (full slot handling, race conditions)
+  - Edge case tests (past times, overlapping bookings, duration limits)
+  - Test admin account for automated member activation
+
+- 2026-02-03: Added user & membership test suite
+  - Registration and pending status tests
+  - Authentication and JWT expiry tests
+  - Access control tests (admin vs member)
 
 - 2026-01-31: Added backend unit tests and API tests
   - Booking service validation tests

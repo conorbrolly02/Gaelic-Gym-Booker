@@ -53,3 +53,9 @@ externalPort = 80
 [[ports]]
 localPort = 8000
 externalPort = 8000
+
+[userenv]
+
+[userenv.development]
+TEST_ADMIN_EMAIL = "testadmin@test.com"
+TEST_ADMIN_PASSWORD = "TestAdmin123!"
