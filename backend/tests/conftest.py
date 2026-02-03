@@ -3,9 +3,12 @@ Test Configuration and Fixtures.
 
 Provides shared test fixtures for database sessions, test clients,
 and authentication utilities.
+
+Uses the existing PostgreSQL database with proper session handling.
 """
 
 import pytest
+import os
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from typing import AsyncGenerator
@@ -17,42 +20,43 @@ from app.database import get_db, Base
 from app.models.user import User, UserRole
 from app.models.member import Member, MembershipStatus
 from app.models.booking import Booking, BookingStatus
-from app.auth import create_access_token, hash_password
+from app.auth.security import create_access_token, hash_password
 
 
-# Note: In-memory SQLite is used for unit tests that don't require database.
-# For full integration tests, use a test PostgreSQL database:
-# TEST_DATABASE_URL = "postgresql+asyncpg://user:pass@localhost/test_gym_booking"
-# SQLite doesn't support PostgreSQL ARRAY type used in recurring_patterns table.
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+# Use actual PostgreSQL database for tests
+TEST_DATABASE_URL = os.environ.get("DATABASE_URL", "").replace("postgresql://", "postgresql+asyncpg://")
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 async def async_engine():
-    """Create async test database engine."""
+    """Create async test database engine using existing PostgreSQL database."""
     engine = create_async_engine(
         TEST_DATABASE_URL,
         echo=False,
     )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 async def db_session(async_engine) -> AsyncGenerator[AsyncSession, None]:
-    """Create async database session for tests."""
+    """
+    Create async database session for tests.
+    
+    Uses standard session that commits and cleans up test data.
+    """
     async_session_factory = async_sessionmaker(
         async_engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    async with async_session_factory() as session:
+    
+    session = async_session_factory()
+    try:
         yield session
+    finally:
         await session.rollback()
+        await session.close()
 
 
 @pytest.fixture
@@ -70,15 +74,16 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
 @pytest.fixture
 async def test_user(db_session: AsyncSession) -> User:
-    """Create a test user."""
+    """Create a test user with active status."""
     user = User(
         id=uuid4(),
-        email="test@example.com",
+        email=f"test_{uuid4().hex[:8]}@example.com",
         password_hash=hash_password("password123"),
         role=UserRole.MEMBER,
+        is_active=True,
     )
     db_session.add(user)
-    await db_session.commit()
+    await db_session.flush()
     await db_session.refresh(user)
     return user
 
@@ -88,19 +93,20 @@ async def test_admin(db_session: AsyncSession) -> User:
     """Create a test admin user."""
     user = User(
         id=uuid4(),
-        email="admin@example.com",
+        email=f"admin_{uuid4().hex[:8]}@example.com",
         password_hash=hash_password("admin123"),
         role=UserRole.ADMIN,
+        is_active=True,
     )
     db_session.add(user)
-    await db_session.commit()
+    await db_session.flush()
     await db_session.refresh(user)
     return user
 
 
 @pytest.fixture
 async def test_member(db_session: AsyncSession, test_user: User) -> Member:
-    """Create a test member linked to test user."""
+    """Create a test member linked to test user with ACTIVE status."""
     member = Member(
         id=uuid4(),
         user_id=test_user.id,
@@ -109,8 +115,11 @@ async def test_member(db_session: AsyncSession, test_user: User) -> Member:
         membership_status=MembershipStatus.ACTIVE,
     )
     db_session.add(member)
-    await db_session.commit()
+    await db_session.flush()
     await db_session.refresh(member)
+    
+    # Attach member to user for convenience
+    test_user.member = member
     return member
 
 
@@ -125,22 +134,25 @@ async def admin_member(db_session: AsyncSession, test_admin: User) -> Member:
         membership_status=MembershipStatus.ACTIVE,
     )
     db_session.add(member)
-    await db_session.commit()
+    await db_session.flush()
     await db_session.refresh(member)
+    
+    # Attach member to admin for convenience
+    test_admin.member = member
     return member
 
 
 @pytest.fixture
 def auth_headers(test_user: User) -> dict:
     """Generate authentication headers for test user."""
-    token = create_access_token(data={"sub": str(test_user.id)})
+    token = create_access_token(test_user.id, test_user.role.value)
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
 def admin_auth_headers(test_admin: User) -> dict:
     """Generate authentication headers for admin user."""
-    token = create_access_token(data={"sub": str(test_admin.id)})
+    token = create_access_token(test_admin.id, test_admin.role.value)
     return {"Authorization": f"Bearer {token}"}
 
 
