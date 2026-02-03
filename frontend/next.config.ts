@@ -12,10 +12,9 @@ const nextConfig: NextConfig = {
   // Allow Replit domains to access the dev server
   // This is required for Replit's proxy to work
   allowedDevOrigins: [
-    "https://*.replit.dev",
-    "https://*.riker.replit.dev",
-    "http://127.0.0.1:*",
-    "http://localhost:*",
+    "*.replit.dev",
+    "*.riker.replit.dev",
+    "*.repl.co",
   ],
   
   // Enable strict mode for better development experience
