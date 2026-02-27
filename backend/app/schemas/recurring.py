@@ -110,3 +110,4 @@ class RecurringPatternCreateResponse(BaseModel):
     pattern: RecurringPatternResponse
     bookings_created: int
     conflicts_skipped: int
+

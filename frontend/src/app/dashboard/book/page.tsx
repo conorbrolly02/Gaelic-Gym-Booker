@@ -24,7 +24,7 @@ import LoadingSpinner from "@/components/LoadingSpinner";
 
 /**
  * Time slot definition
- * Gym operates in 1-hour slots from 6 AM to 10 PM
+ * Gym operates 24 hours (12am to 12am)
  */
 interface TimeSlot {
   startHour: number;
@@ -33,15 +33,16 @@ interface TimeSlot {
 }
 
 /**
- * Generate available time slots (6 AM to 10 PM, 1-hour each)
+ * Generate available time slots (24 hours, 1-hour each)
  */
 const generateTimeSlots = (): TimeSlot[] => {
   const slots: TimeSlot[] = [];
-  for (let hour = 6; hour < 22; hour++) {
+  for (let hour = 0; hour < 24; hour++) {
+    const nextHour = (hour + 1) % 24;
     slots.push({
       startHour: hour,
-      endHour: hour + 1,
-      label: `${hour.toString().padStart(2, "0")}:00 - ${(hour + 1).toString().padStart(2, "0")}:00`,
+      endHour: nextHour === 0 ? 24 : nextHour,
+      label: `${hour.toString().padStart(2, "0")}:00 - ${nextHour.toString().padStart(2, "0")}:00`,
     });
   }
   return slots;
@@ -65,11 +66,26 @@ export default function BookSlotPage() {
   // User's own bookings for the date (to prevent double booking)
   const [myBookings, setMyBookings] = useState<Booking[]>([]);
 
+  // Booking type state
+  const [bookingType, setBookingType] = useState<"SINGLE" | "TEAM">("SINGLE");
+  const [partySize, setPartySize] = useState<number>(1);
+
   // UI state
   const [isLoading, setIsLoading] = useState(true);
   const [isBooking, setIsBooking] = useState<string | null>(null); // Tracks which slot is being booked
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  /**
+   * Reset party size when booking type changes
+   */
+  useEffect(() => {
+    if (bookingType === "SINGLE") {
+      setPartySize(1);
+    } else if (partySize < 1) {
+      setPartySize(2);
+    }
+  }, [bookingType]);
 
   /**
    * Fetch bookings for the selected date
@@ -138,9 +154,12 @@ export default function BookSlotPage() {
       await bookingApi.createBooking({
         start_time: startTime.toISOString(),
         end_time: endTime.toISOString(),
+        booking_type: bookingType,
+        party_size: partySize,
       });
 
-      setSuccess(`Successfully booked ${slot.label}!`);
+      const bookingTypeText = bookingType === "SINGLE" ? "single" : `team (${partySize} people)`;
+      setSuccess(`Successfully booked ${slot.label} as a ${bookingTypeText} booking!`);
 
       // Refresh bookings
       const bookings = await bookingApi.getBookings({ upcoming: true });
@@ -206,6 +225,61 @@ export default function BookSlotPage() {
         <p className="text-sm text-gray-500 mt-2">
           Showing slots for: <span className="font-medium">{formatSelectedDate()}</span>
         </p>
+      </div>
+
+      {/* Booking Type Selection */}
+      <div className="card">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Booking Type</h2>
+
+        <div className="space-y-4">
+          {/* Booking Type Radio Buttons */}
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="bookingType"
+                value="SINGLE"
+                checked={bookingType === "SINGLE"}
+                onChange={(e) => setBookingType(e.target.value as "SINGLE" | "TEAM")}
+                className="w-4 h-4 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-gray-700">Single Booking (1 person)</span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="bookingType"
+                value="TEAM"
+                checked={bookingType === "TEAM"}
+                onChange={(e) => setBookingType(e.target.value as "SINGLE" | "TEAM")}
+                className="w-4 h-4 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-gray-700">Team Booking</span>
+            </label>
+          </div>
+
+          {/* Party Size Input (only for TEAM bookings) */}
+          {bookingType === "TEAM" && (
+            <div>
+              <label htmlFor="partySize" className="block text-sm font-medium text-gray-700 mb-2">
+                Number of People (2-20)
+              </label>
+              <input
+                type="number"
+                id="partySize"
+                min="2"
+                max="20"
+                value={partySize}
+                onChange={(e) => setPartySize(Math.max(2, Math.min(20, parseInt(e.target.value) || 2)))}
+                className="input max-w-xs"
+              />
+              <p className="text-sm text-gray-500 mt-1">
+                Maximum 20 people total per time slot
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Alerts */}

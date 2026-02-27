@@ -8,7 +8,7 @@ It's separate from Member to keep auth concerns isolated from gym-specific data.
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Boolean, DateTime, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID
+from app.models.types import GUID
 from sqlalchemy.orm import relationship
 import enum
 
@@ -18,14 +18,16 @@ from app.database import Base
 class UserRole(str, enum.Enum):
     """
     Enum defining user roles in the system.
-    
+
     Using str as a mixin allows easy JSON serialization.
-    - MEMBER: Regular gym member, can book slots
+    - MEMBER: Regular gym member, can book gym only
+    - COACH: Coach, can book all facilities including pitches
     - ADMIN: Administrator, can manage members and all bookings
-    
+
     Note: Values must match the PostgreSQL enum values (uppercase)
     """
     MEMBER = "MEMBER"
+    COACH = "COACH"
     ADMIN = "ADMIN"
 
 
@@ -50,7 +52,7 @@ class User(Base):
     # Primary key using UUID for security
     # UUID v4 is random, so attackers can't guess other user IDs
     id = Column(
-        UUID(as_uuid=True),
+        GUID,
         primary_key=True,
         default=uuid.uuid4,
         comment="Unique user identifier"
@@ -122,3 +124,4 @@ class User(Base):
     def __repr__(self):
         """String representation for debugging."""
         return f"<User {self.email} ({self.role.value})>"
+

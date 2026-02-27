@@ -9,7 +9,7 @@ while gym-specific logic lives in the Member model.
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, ForeignKey, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID
+from app.models.types import GUID
 from sqlalchemy.orm import relationship
 import enum
 
@@ -55,7 +55,7 @@ class Member(Base):
     __tablename__ = "members"
     
     id = Column(
-        UUID(as_uuid=True),
+        GUID,
         primary_key=True,
         default=uuid.uuid4,
         comment="Unique member identifier"
@@ -64,7 +64,7 @@ class Member(Base):
     # Foreign key to users table
     # unique=True enforces one-to-one relationship
     user_id = Column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("users.id", ondelete="RESTRICT"),  # Prevent user deletion if member exists
         unique=True,
         nullable=False,
@@ -97,7 +97,7 @@ class Member(Base):
     
     # Track who approved the member (for audit trail)
     approved_by = Column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         comment="Admin who approved this member"
@@ -154,3 +154,4 @@ class Member(Base):
     def __repr__(self):
         """String representation for debugging."""
         return f"<Member {self.full_name} ({self.membership_status.value})>"
+

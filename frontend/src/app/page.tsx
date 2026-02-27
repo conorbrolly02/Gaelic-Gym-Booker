@@ -8,15 +8,19 @@
  * a welcome message with login/register links for guests.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import { Booking } from "@/types";
 
 export default function HomePage() {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   // Redirect authenticated users to dashboard
   useEffect(() => {
@@ -47,10 +51,10 @@ export default function HomePage() {
 
           {/* Title and description */}
           <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">
-            Eoghan Rua CLG Gym
+            Eoghan Rua GAC
           </h1>
           <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
-            Book your gym time slots easily. Stay fit, stay healthy, and enjoy 
+            Book your facility time slots easily. Stay fit, stay healthy, and enjoy 
             exclusive access to our club facilities.
           </p>
 

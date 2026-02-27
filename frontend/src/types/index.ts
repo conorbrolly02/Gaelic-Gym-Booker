@@ -7,10 +7,11 @@
 
 /**
  * User roles in the system
- * - MEMBER: Regular gym member who can book slots
+ * - MEMBER: Regular gym member who can book gym only
+ * - COACH: Coach who can book all facilities including pitches
  * - ADMIN: Administrator who can manage members and all bookings
  */
-export type UserRole = "MEMBER" | "ADMIN";
+export type UserRole = "MEMBER" | "COACH" | "ADMIN";
 
 /**
  * Membership status for gym members
@@ -53,6 +54,8 @@ export interface Member {
   user_id: string;
   full_name: string;
   phone?: string;
+  email?: string;
+  role?: UserRole;
   membership_status: MembershipStatus;
   joined_at: string;
   approved_at?: string;
@@ -74,11 +77,16 @@ export interface AuthResponse {
 export interface Booking {
   id: string;
   member_id: string;
+  resource_id?: string;
+  resource_name?: string;  // Name of facility (Gym, Main Pitch, Minor Pitch, etc.)
   start_time: string;
   end_time: string;
   status: BookingStatus;
+  booking_type: string;
+  party_size: number;
   recurring_pattern_id?: string;
   created_by: string;
+  creator_name?: string;  // Email/name of user who created the booking
   cancelled_by?: string;
   cancelled_at?: string;
   created_at: string;
@@ -155,6 +163,8 @@ export interface RegisterData {
 export interface CreateBookingRequest {
   start_time: string;
   end_time: string;
+  booking_type?: string;
+  party_size?: number;
 }
 
 /**

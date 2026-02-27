@@ -276,8 +276,10 @@ export default function AdminBookingsPage() {
                   <tr className="border-b border-gray-200 bg-gray-50">
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Time</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Member</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Facility</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Type</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Status</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Created</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Created By</th>
                     <th className="text-right py-3 px-4 font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
@@ -285,7 +287,6 @@ export default function AdminBookingsPage() {
                   {bookings.map((booking) => {
                     const start = formatDateTime(booking.start_time);
                     const end = formatDateTime(booking.end_time);
-                    const created = formatDateTime(booking.created_at);
 
                     return (
                       <tr key={booking.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -297,20 +298,29 @@ export default function AdminBookingsPage() {
                         <td className="py-4 px-4 text-gray-600">
                           {booking.member?.full_name || "Unknown"}
                         </td>
+                        <td className="py-4 px-4 text-gray-600">
+                          {booking.resource_name || "Main Gym"}
+                        </td>
+                        <td className="py-4 px-4 text-gray-600 text-sm">
+                          {booking.booking_type === "TEAM"
+                            ? `Team (${booking.party_size})`
+                            : "Individual"
+                          }
+                        </td>
                         <td className="py-4 px-4">
                           <span className={`badge ${getStatusBadge(booking.status)}`}>
                             {booking.status}
                           </span>
                         </td>
                         <td className="py-4 px-4 text-gray-600 text-sm">
-                          {created.date} {created.time}
+                          {booking.creator_name || "Unknown"}
                         </td>
                         <td className="py-4 px-4 text-right">
                           {canCancel(booking) && (
                             <button
                               onClick={() => handleCancel(booking.id)}
                               disabled={cancellingId === booking.id}
-                              className="px-3 py-1 text-sm font-medium text-red-600 
+                              className="px-3 py-1 text-sm font-medium text-red-600
                                          hover:bg-red-50 rounded-lg transition-colors
                                          disabled:opacity-50"
                             >
@@ -344,6 +354,16 @@ export default function AdminBookingsPage() {
                         <div className="text-sm text-gray-600">
                           {booking.member?.full_name || "Unknown Member"}
                         </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {booking.resource_name || "Main Gym"}
+                          {" • "}
+                          {booking.booking_type === "TEAM"
+                            ? `Team (${booking.party_size} people)`
+                            : "Individual"}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Created by: {booking.creator_name || "Unknown"}
+                        </div>
                       </div>
                       <span className={`badge ${getStatusBadge(booking.status)}`}>
                         {booking.status}
@@ -354,8 +374,8 @@ export default function AdminBookingsPage() {
                       <button
                         onClick={() => handleCancel(booking.id)}
                         disabled={cancellingId === booking.id}
-                        className="mt-3 w-full py-2 text-red-600 border border-red-200 
-                                   rounded-lg text-sm font-medium hover:bg-red-50 
+                        className="mt-3 w-full py-2 text-red-600 border border-red-200
+                                   rounded-lg text-sm font-medium hover:bg-red-50
                                    disabled:opacity-50 transition-colors"
                       >
                         {cancellingId === booking.id ? "Cancelling..." : "Cancel Booking"}

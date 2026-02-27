@@ -7,12 +7,13 @@ For example, "Every Monday and Wednesday at 6pm for 1 hour".
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, Integer, Date, Time, Boolean, DateTime, ForeignKey, Enum as SQLEnum, ARRAY
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, Integer, Date, Time, Boolean, DateTime, ForeignKey, Enum as SQLEnum, String
 from sqlalchemy.orm import relationship
 import enum
+import json
 
 from app.database import Base
+from app.models.types import GUID
 
 
 class PatternType(str, enum.Enum):
@@ -53,15 +54,15 @@ class RecurringPattern(Base):
     __tablename__ = "recurring_patterns"
     
     id = Column(
-        UUID(as_uuid=True),
+        GUID,
         primary_key=True,
         default=uuid.uuid4,
         comment="Unique pattern identifier"
     )
-    
+
     # Which member this pattern belongs to
     member_id = Column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("members.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
@@ -78,11 +79,12 @@ class RecurringPattern(Base):
     # For weekly patterns: which days of the week
     # Array of integers: 0=Sunday, 1=Monday, ..., 6=Saturday
     # For daily patterns, this is empty
+    # Using String for SQLite compatibility, JSON format for PostgreSQL use ARRAY
     days_of_week = Column(
-        ARRAY(Integer),
+        String,
         nullable=False,
-        default=[],
-        comment="Days of week for weekly patterns (0=Sun, 6=Sat)"
+        default="[]",
+        comment="Days of week for weekly patterns (0=Sun, 6=Sat) - JSON array"
     )
     
     # Time of day the booking starts (without date)
@@ -153,3 +155,4 @@ class RecurringPattern(Base):
     def __repr__(self):
         """String representation for debugging."""
         return f"<RecurringPattern {self.pattern_type.value} from {self.valid_from} to {self.valid_until}>"
+

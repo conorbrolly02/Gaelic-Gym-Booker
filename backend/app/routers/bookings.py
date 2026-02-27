@@ -27,6 +27,8 @@ from app.schemas.booking import (
     BookingResponse,
     PaginatedBookingsResponse,
     AvailabilityResponse,
+    EditBookingRequest,           # ← NEW
+    CancelBookingRequest          # ← NEW
 )
 from app.schemas.recurring import (
     RecurringPatternCreate,
@@ -34,6 +36,8 @@ from app.schemas.recurring import (
     RecurringPatternCreateResponse,
 )
 from app.services.booking_service import BookingService, BookingError, BookingErrorCode
+from app.services.conflict_service import ConflictService     # ← NEW
+from app.services.policy_service import PolicyService         # ← NEW
 from app.auth.dependencies import get_current_member
 from app.models.member import Member
 from app.models.booking import BookingStatus
@@ -42,9 +46,6 @@ from app.models.booking import BookingStatus
 def booking_error_response(error: BookingError, status_code: int = 409) -> JSONResponse:
     """
     Create a structured error response for booking errors.
-    
-    Returns JSON with both human-readable message and error code
-    for programmatic handling by the frontend.
     """
     return JSONResponse(
         status_code=status_code,
@@ -54,12 +55,16 @@ def booking_error_response(error: BookingError, status_code: int = 409) -> JSONR
         }
     )
 
+
 router = APIRouter(
     prefix="/bookings",
     tags=["Bookings"],
 )
 
 
+# ------------------------------------------------------------
+# LIST BOOKINGS
+# ------------------------------------------------------------
 @router.get(
     "",
     response_model=PaginatedBookingsResponse,
@@ -74,14 +79,9 @@ async def list_my_bookings(
     member: Member = Depends(get_current_member),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    List the current member's bookings.
-    
-    Supports filtering by status and date range, with pagination.
-    """
     service = BookingService(db)
     
-    # Convert status string to enum if provided (accepts lowercase input)
+    # Convert string → enum
     status_enum = None
     if status:
         try:
@@ -100,15 +100,21 @@ async def list_my_bookings(
         page=page,
         limit=limit,
     )
-    
+
+    # Enrich bookings with resource and creator information
+    enriched_bookings = [BookingResponse.from_booking(b) for b in bookings]
+
     return {
-        "bookings": bookings,
+        "bookings": enriched_bookings,
         "total": total,
         "page": page,
         "limit": limit,
     }
 
 
+# ------------------------------------------------------------
+# CHECK AVAILABILITY
+# ------------------------------------------------------------
 @router.get(
     "/availability",
     response_model=AvailabilityResponse,
@@ -119,13 +125,7 @@ async def check_availability(
     member: Member = Depends(get_current_member),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Get availability information for a specific date.
-    
-    Returns hourly slots with current booking counts and available spots.
-    """
     service = BookingService(db)
-    
     slots = await service.get_availability(check_date)
     
     return {
@@ -134,55 +134,29 @@ async def check_availability(
     }
 
 
+# ------------------------------------------------------------
+# CREATE BOOKING
+# ------------------------------------------------------------
 @router.post(
     "",
     status_code=status.HTTP_201_CREATED,
     response_model=BookingResponse,
     summary="Create a new booking",
-    responses={
-        409: {
-            "description": "Booking conflict",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "Time slot is full.",
-                        "error_code": "CAPACITY_EXCEEDED"
-                    }
-                }
-            }
-        }
-    }
 )
 async def create_booking(
     booking_data: BookingCreate,
     member: Member = Depends(get_current_member),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Create a new gym booking.
-    
-    Business Rules Enforced:
-    - CAPACITY_EXCEEDED: Time slot has reached maximum capacity (20 people)
-    - MEMBER_OVERLAP: You already have a booking during this time
-    - PAST_START_TIME: Cannot book slots that have already started
-    - DURATION_TOO_SHORT/LONG: Duration must be 30 mins to 8 hours
-    - TOO_FAR_IN_ADVANCE: Cannot book more than 365 days ahead
-    
-    Error Response Format:
-    ```json
-    {
-        "detail": "Human readable message",
-        "error_code": "MACHINE_READABLE_CODE"
-    }
-    ```
-    """
     service = BookingService(db)
-    
+
     try:
         booking = await service.create_booking(
             member_id=member.id,
             start_time=booking_data.start_time,
             end_time=booking_data.end_time,
+            booking_type=booking_data.booking_type,
+            party_size=booking_data.party_size,
             created_by=member.user_id,
             admin_override=False,
         )
@@ -201,6 +175,9 @@ async def create_booking(
         return booking_error_response(e, status_map.get(e.code, 409))
 
 
+# ------------------------------------------------------------
+# GET A BOOKING
+# ------------------------------------------------------------
 @router.get(
     "/{booking_id}",
     response_model=BookingResponse,
@@ -211,73 +188,117 @@ async def get_booking(
     member: Member = Depends(get_current_member),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Get details of a specific booking.
-    
-    Members can only view their own bookings.
-    """
     service = BookingService(db)
-    
     booking = await service.get_booking_by_id(booking_id)
     
     if not booking:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Booking not found",
-        )
+        raise HTTPException(status_code=404, detail="Booking not found")
     
-    # Check ownership
     if booking.member_id != member.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not your booking",
-        )
+        raise HTTPException(status_code=403, detail="Not your booking")
     
     return booking
 
 
-@router.delete(
+# ------------------------------------------------------------
+# NEW: CANCEL BOOKING WITH REASON (POST)
+# ------------------------------------------------------------
+@router.post(
+    "/{booking_id}/cancel",
+    response_model=BookingResponse,
+    summary="Cancel a booking (with reason and cutoff rules)",
+)
+async def cancel_booking_new(
+    booking_id: UUID,
+    payload: CancelBookingRequest,
+    member: Member = Depends(get_current_member),
+    db: AsyncSession = Depends(get_db)
+):
+    service = BookingService(
+        db,
+        conflict_service=ConflictService(db),
+        policy_service=PolicyService(),
+    )
+
+    try:
+        booking = await service.cancel_booking(
+            booking_id=booking_id,
+            payload=payload,
+            actor_user=member.user,
+            is_admin=False,
+        )
+        await db.commit()
+        return booking
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ------------------------------------------------------------
+# NEW: EDIT BOOKING (PATCH)
+# ------------------------------------------------------------
+@router.patch(
     "/{booking_id}",
     response_model=BookingResponse,
-    summary="Cancel a booking",
+    summary="Edit an existing booking",
 )
-async def cancel_booking(
+async def edit_booking(
+    booking_id: UUID,
+    payload: EditBookingRequest,
+    member: Member = Depends(get_current_member),
+    db: AsyncSession = Depends(get_db)
+):
+    service = BookingService(
+        db,
+        conflict_service=ConflictService(db),
+        policy_service=PolicyService(),
+    )
+
+    try:
+        booking = await service.edit_booking(
+            booking_id=booking_id,
+            edit=payload,
+            actor_user=member.user,
+            is_admin=False,
+        )
+        await db.commit()
+        return booking
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ------------------------------------------------------------
+# NEW: DELETE CANCELLED BOOKING ONLY
+# ------------------------------------------------------------
+@router.delete(
+    "/{booking_id}",
+    summary="Delete a cancelled booking",
+)
+async def delete_cancelled_booking(
     booking_id: UUID,
     member: Member = Depends(get_current_member),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Cancel one of your bookings.
-    
-    Soft deletes the booking (status becomes 'cancelled').
-    """
-    service = BookingService(db)
-    
-    booking = await service.get_booking_by_id(booking_id)
-    
-    if not booking:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Booking not found",
-        )
-    
-    if booking.member_id != member.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not your booking",
-        )
-    
+    service = BookingService(
+        db,
+        conflict_service=ConflictService(db),
+        policy_service=PolicyService(),
+    )
+
     try:
-        cancelled = await service.cancel_booking(
+        ok = await service.delete_cancelled(
             booking_id=booking_id,
-            cancelled_by=member.user_id,
+            actor_user=member.user,
+            is_admin=False,
         )
-        return cancelled
-    
-    except BookingError as e:
-        return booking_error_response(e, 400)
+        await db.commit()
+        return {"deleted": ok}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
+# ------------------------------------------------------------
+# CREATE RECURRING PATTERN
+# ------------------------------------------------------------
 @router.post(
     "/recurring",
     status_code=status.HTTP_201_CREATED,
@@ -289,20 +310,10 @@ async def create_recurring_booking(
     member: Member = Depends(get_current_member),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Create a recurring booking pattern.
-    
-    Generates individual booking instances based on the pattern.
-    Conflicts (capacity/overlap) are skipped but counted.
-    """
     service = BookingService(db)
-    
-    # Validate weekly patterns have days specified (case-insensitive check)
+
     if pattern_data.pattern_type.lower() == "weekly" and not pattern_data.days_of_week:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Weekly patterns require days_of_week",
-        )
+        raise HTTPException(status_code=400, detail="Weekly patterns require days_of_week")
     
     try:
         pattern, created, skipped = await service.create_recurring_pattern(
@@ -314,20 +325,15 @@ async def create_recurring_booking(
             valid_from=pattern_data.valid_from,
             valid_until=pattern_data.valid_until,
         )
-        
-        return {
-            "pattern": pattern,
-            "bookings_created": created,
-            "conflicts_skipped": skipped,
-        }
+        return {"pattern": pattern, "bookings_created": created, "conflicts_skipped": skipped}
     
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=400, detail=str(e))
 
 
+# ------------------------------------------------------------
+# LIST RECURRING PATTERNS
+# ------------------------------------------------------------
 @router.get(
     "/recurring/patterns",
     response_model=list[RecurringPatternResponse],
@@ -338,25 +344,20 @@ async def list_recurring_patterns(
     member: Member = Depends(get_current_member),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    List the current member's recurring booking patterns.
-    """
     from sqlalchemy import select
     from app.models.recurring import RecurringPattern
     
-    query = select(RecurringPattern).where(
-        RecurringPattern.member_id == member.id
-    )
-    
+    q = select(RecurringPattern).where(RecurringPattern.member_id == member.id)
     if active is not None:
-        query = query.where(RecurringPattern.is_active == active)
+        q = q.where(RecurringPattern.is_active == active)
     
-    result = await db.execute(query)
-    patterns = result.scalars().all()
-    
-    return patterns
+    result = await db.execute(q)
+    return result.scalars().all()
 
 
+# ------------------------------------------------------------
+# DEACTIVATE RECURRING PATTERN
+# ------------------------------------------------------------
 @router.delete(
     "/recurring/{pattern_id}",
     response_model=dict,
@@ -364,35 +365,21 @@ async def list_recurring_patterns(
 )
 async def deactivate_recurring_pattern(
     pattern_id: UUID,
-    cancel_future: bool = Query(True, description="Cancel future bookings from this pattern"),
+    cancel_future: bool = Query(True, description="Cancel future bookings"),
     member: Member = Depends(get_current_member),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Deactivate a recurring pattern.
-    
-    Optionally cancels all future bookings generated by this pattern.
-    """
     from sqlalchemy import select
     from app.models.recurring import RecurringPattern
     
-    # Verify ownership
-    result = await db.execute(
-        select(RecurringPattern).where(RecurringPattern.id == pattern_id)
-    )
+    result = await db.execute(select(RecurringPattern).where(RecurringPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
     
     if not pattern:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pattern not found",
-        )
+        raise HTTPException(status_code=404, detail="Pattern not found")
     
     if pattern.member_id != member.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not your pattern",
-        )
+        raise HTTPException(status_code=403, detail="Not your pattern")
     
     service = BookingService(db)
     
@@ -401,15 +388,10 @@ async def deactivate_recurring_pattern(
             pattern_id=pattern_id,
             cancel_future=cancel_future,
         )
-        
         return {
             "pattern_id": str(pattern_id),
             "deactivated": True,
             "bookings_cancelled": cancelled,
         }
-    
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=400, detail=str(e))

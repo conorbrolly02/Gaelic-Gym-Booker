@@ -51,7 +51,25 @@ class Settings(BaseSettings):
     
     # Minimum booking duration in minutes
     MIN_BOOKING_DURATION_MINS: int = 30
-    
+
+    # Pitch booking configuration
+    # Duration of each time slot in minutes
+    PITCH_SLOT_MINUTES: int = 60
+    # Opening time for pitches (24-hour format HH:MM) - 6am
+    PITCH_OPEN_TIME: str = "06:00"
+    # Closing time for pitches (24-hour format HH:MM) - midnight (00:00 next day)
+    PITCH_CLOSE_TIME: str = "00:00"
+    # Timezone for pitch booking times
+    TIMEZONE: str = "Europe/London"
+
+    # Gym booking configuration
+    # Duration of each time slot in minutes
+    GYM_SLOT_MINUTES: int = 90
+    # Opening time for gym (24-hour format HH:MM) - midnight
+    GYM_OPEN_TIME: str = "00:00"
+    # Closing time for gym (24-hour format HH:MM) - midnight next day (24 hours)
+    GYM_CLOSE_TIME: str = "00:00"
+
     class Config:
         # Load from .env file if it exists (useful for local development)
         env_file = ".env"
@@ -62,3 +80,4 @@ class Settings(BaseSettings):
 # Create a singleton settings instance
 # This is imported throughout the app: from app.config import settings
 settings = Settings()
+

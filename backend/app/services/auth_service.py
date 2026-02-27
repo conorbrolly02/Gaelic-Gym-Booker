@@ -174,5 +174,57 @@ class AuthService:
         self.db.add(user)
         await self.db.commit()
         await self.db.refresh(user)
-        
+
         return user
+
+    async def update_user_profile(
+        self,
+        user_id: UUID,
+        email: Optional[str] = None,
+        current_password: Optional[str] = None,
+        new_password: Optional[str] = None
+    ) -> User:
+        """
+        Update user email and/or password.
+
+        Args:
+            user_id: The user's UUID
+            email: New email address (optional)
+            current_password: Current password for verification (required if changing email or password)
+            new_password: New password to set (optional)
+
+        Returns:
+            The updated User object
+
+        Raises:
+            ValueError: If current password is wrong, email is already taken, or validation fails
+        """
+        user = await self.get_user_by_id(user_id)
+        if not user:
+            raise ValueError("User not found")
+
+        # If changing email or password, verify current password
+        if (email or new_password) and not current_password:
+            raise ValueError("Current password is required to change email or password")
+
+        if current_password:
+            if not verify_password(current_password, user.password_hash):
+                raise ValueError("Current password is incorrect")
+
+        # Update email if provided
+        if email and email.lower() != user.email:
+            # Check if new email is already taken
+            existing = await self.get_user_by_email(email)
+            if existing and existing.id != user_id:
+                raise ValueError("Email already in use")
+            user.email = email.lower()
+
+        # Update password if provided
+        if new_password:
+            user.password_hash = hash_password(new_password)
+
+        await self.db.commit()
+        await self.db.refresh(user)
+
+        return user
+

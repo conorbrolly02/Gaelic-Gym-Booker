@@ -151,3 +151,4 @@ def decode_token(token: str) -> Optional[dict]:
     except JWTError:
         # Token is invalid, expired, or tampered with
         return None
+

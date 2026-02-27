@@ -19,6 +19,7 @@ import { adminApi } from "@/lib/api";
 import { Member } from "@/types";
 import Alert from "@/components/Alert";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import EditMemberModal from "@/components/EditMemberModal";
 
 type FilterType = "all" | "pending" | "active" | "suspended";
 
@@ -37,6 +38,9 @@ export default function AdminMembersPage() {
   const [actionId, setActionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Edit modal state
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
 
   // Redirect non-admins (only after auth check completes)
   useEffect(() => {
@@ -133,6 +137,17 @@ export default function AdminMembersPage() {
     } finally {
       setActionId(null);
     }
+  };
+
+  /**
+   * Handle member update from modal
+   */
+  const handleMemberUpdated = (updatedMember: Member) => {
+    // Update the member in the local state
+    setMembers((prevMembers) =>
+      prevMembers.map((m) => (m.id === updatedMember.id ? updatedMember : m))
+    );
+    setSuccess("Member updated successfully");
   };
 
   /**
@@ -268,11 +283,18 @@ export default function AdminMembersPage() {
                       </td>
                       <td className="py-4 px-4 text-right">
                         <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => setEditingMember(member)}
+                            className="px-3 py-1 text-sm font-medium text-blue-600
+                                       hover:bg-blue-50 rounded-lg transition-colors"
+                          >
+                            Edit
+                          </button>
                           {member.membership_status === "PENDING" && (
                             <button
                               onClick={() => handleApprove(member.id)}
                               disabled={actionId === member.id}
-                              className="px-3 py-1 text-sm font-medium text-green-600 
+                              className="px-3 py-1 text-sm font-medium text-green-600
                                          hover:bg-green-50 rounded-lg transition-colors
                                          disabled:opacity-50"
                             >
@@ -283,7 +305,7 @@ export default function AdminMembersPage() {
                             <button
                               onClick={() => handleSuspend(member.id)}
                               disabled={actionId === member.id}
-                              className="px-3 py-1 text-sm font-medium text-red-600 
+                              className="px-3 py-1 text-sm font-medium text-red-600
                                          hover:bg-red-50 rounded-lg transition-colors
                                          disabled:opacity-50"
                             >
@@ -294,7 +316,7 @@ export default function AdminMembersPage() {
                             <button
                               onClick={() => handleReactivate(member.id)}
                               disabled={actionId === member.id}
-                              className="px-3 py-1 text-sm font-medium text-blue-600 
+                              className="px-3 py-1 text-sm font-medium text-blue-600
                                          hover:bg-blue-50 rounded-lg transition-colors
                                          disabled:opacity-50"
                             >
@@ -334,12 +356,20 @@ export default function AdminMembersPage() {
 
                   {/* Action buttons */}
                   <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditingMember(member)}
+                      className="flex-1 py-2 text-sm font-medium text-blue-600 border
+                                 border-blue-200 rounded-lg hover:bg-blue-50
+                                 transition-colors"
+                    >
+                      Edit
+                    </button>
                     {member.membership_status === "PENDING" && (
                       <button
                         onClick={() => handleApprove(member.id)}
                         disabled={actionId === member.id}
-                        className="flex-1 py-2 text-sm font-medium text-white bg-green-600 
-                                   rounded-lg hover:bg-green-700 disabled:opacity-50 
+                        className="flex-1 py-2 text-sm font-medium text-white bg-green-600
+                                   rounded-lg hover:bg-green-700 disabled:opacity-50
                                    transition-colors"
                       >
                         {actionId === member.id ? "..." : "Approve"}
@@ -349,8 +379,8 @@ export default function AdminMembersPage() {
                       <button
                         onClick={() => handleSuspend(member.id)}
                         disabled={actionId === member.id}
-                        className="flex-1 py-2 text-sm font-medium text-red-600 border 
-                                   border-red-200 rounded-lg hover:bg-red-50 
+                        className="flex-1 py-2 text-sm font-medium text-red-600 border
+                                   border-red-200 rounded-lg hover:bg-red-50
                                    disabled:opacity-50 transition-colors"
                       >
                         {actionId === member.id ? "..." : "Suspend"}
@@ -360,8 +390,8 @@ export default function AdminMembersPage() {
                       <button
                         onClick={() => handleReactivate(member.id)}
                         disabled={actionId === member.id}
-                        className="flex-1 py-2 text-sm font-medium text-blue-600 border 
-                                   border-blue-200 rounded-lg hover:bg-blue-50 
+                        className="flex-1 py-2 text-sm font-medium text-blue-600 border
+                                   border-blue-200 rounded-lg hover:bg-blue-50
                                    disabled:opacity-50 transition-colors"
                       >
                         {actionId === member.id ? "..." : "Reactivate"}
@@ -374,6 +404,15 @@ export default function AdminMembersPage() {
           </>
         )}
       </div>
+
+      {/* Edit Member Modal */}
+      {editingMember && (
+        <EditMemberModal
+          member={editingMember}
+          onClose={() => setEditingMember(null)}
+          onUpdated={handleMemberUpdated}
+        />
+      )}
     </div>
   );
 }

@@ -65,3 +65,4 @@ async def update_my_profile(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+

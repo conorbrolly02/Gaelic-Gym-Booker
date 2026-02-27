@@ -55,17 +55,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Pending Approval</h1>
           <p className="text-gray-600 mb-6">
-            Your membership is awaiting admin approval. You&apos;ll be able to access 
+            Your membership is awaiting admin approval. You&apos;ll be able to access
             the gym booking system once your account is approved.
           </p>
           <button
-            onClick={() => {
-              // Use the auth context logout
+            onClick={async () => {
+              // Import and use logout from auth context
+              const { authApi } = await import("@/lib/api");
+              try {
+                await authApi.logout();
+              } catch (error) {
+                console.error("Logout error:", error);
+              }
+              // Redirect to login page
               window.location.href = "/login";
             }}
-            className="text-primary-600 hover:text-primary-700 font-medium"
+            className="px-6 py-3 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors"
           >
-            Return to Login
+            Logout
           </button>
         </div>
       </div>
@@ -84,16 +91,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Membership Suspended</h1>
           <p className="text-gray-600 mb-6">
-            Your membership has been suspended. Please contact the club administrator 
+            Your membership has been suspended. Please contact the club administrator
             for more information.
           </p>
           <button
-            onClick={() => {
+            onClick={async () => {
+              // Import and use logout from auth context
+              const { authApi } = await import("@/lib/api");
+              try {
+                await authApi.logout();
+              } catch (error) {
+                console.error("Logout error:", error);
+              }
+              // Redirect to login page
               window.location.href = "/login";
             }}
-            className="text-primary-600 hover:text-primary-700 font-medium"
+            className="px-6 py-3 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors"
           >
-            Return to Login
+            Logout
           </button>
         </div>
       </div>

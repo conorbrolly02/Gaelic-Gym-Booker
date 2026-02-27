@@ -276,3 +276,81 @@ class MemberService:
             "total_bookings": total,
             "upcoming_bookings": upcoming,
         }
+
+    async def admin_update_member(
+        self,
+        member_id: UUID,
+        full_name: Optional[str] = None,
+        phone: Optional[str] = None,
+        email: Optional[str] = None,
+        role: Optional[str] = None,
+        membership_status: Optional[str] = None
+    ) -> Member:
+        """
+        Admin comprehensive member update including role changes.
+
+        Allows admins to update all member details including:
+        - Personal information (name, phone)
+        - Email address
+        - User role (MEMBER, COACH, ADMIN)
+        - Membership status
+
+        Args:
+            member_id: The member to update
+            full_name: New name (optional)
+            phone: New phone (optional)
+            email: New email address (optional)
+            role: New user role (optional)
+            membership_status: New membership status (optional)
+
+        Returns:
+            The updated Member
+
+        Raises:
+            ValueError: If member not found, email already in use, or invalid role/status
+        """
+        from app.models.user import UserRole
+
+        member = await self.get_member_by_id(member_id)
+        if not member:
+            raise ValueError("Member not found")
+
+        # Update member fields
+        if full_name is not None:
+            member.full_name = full_name
+
+        if phone is not None:
+            member.phone = phone
+
+        # Update user email and role
+        if email or role:
+            user = member.user
+
+            if email and email.lower() != user.email:
+                # Check if email already exists
+                existing_result = await self.db.execute(
+                    select(User).where(User.email == email.lower())
+                )
+                existing_user = existing_result.scalar_one_or_none()
+                if existing_user and existing_user.id != user.id:
+                    raise ValueError("Email already in use")
+                user.email = email.lower()
+
+            if role:
+                try:
+                    user.role = UserRole(role.upper())
+                except ValueError:
+                    raise ValueError(f"Invalid role: {role}. Must be MEMBER, COACH, or ADMIN")
+
+        # Update membership status
+        if membership_status:
+            try:
+                member.membership_status = MembershipStatus(membership_status.upper())
+            except ValueError:
+                raise ValueError(f"Invalid status: {membership_status}")
+
+        await self.db.commit()
+        await self.db.refresh(member)
+
+        return member
+

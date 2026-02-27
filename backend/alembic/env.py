@@ -23,12 +23,19 @@ from app.models import User, Member, Booking, RecurringPattern
 config = context.config
 
 # Get the database URL from environment variable
+# Load from .env file if it exists
+from dotenv import load_dotenv
+load_dotenv()
+
 database_url = os.getenv("DATABASE_URL", "")
 if database_url:
-    # Alembic uses synchronous connections, so use psycopg2 driver
-    if database_url.startswith("postgresql://"):
-        # Keep as is for sync driver
-        pass
+    # Alembic uses synchronous connections, so convert async URLs to sync
+    if database_url.startswith("postgresql+asyncpg://"):
+        # Convert asyncpg to psycopg2 for Alembic
+        database_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
+    elif database_url.startswith("sqlite+aiosqlite://"):
+        # Convert aiosqlite to sqlite for Alembic
+        database_url = database_url.replace("sqlite+aiosqlite://", "sqlite://")
     config.set_main_option("sqlalchemy.url", database_url)
 
 # Set up Python logging

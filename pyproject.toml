@@ -1,25 +1,15 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "repl-nix-workspace"
+name = "gaelic-gym-booker"
 version = "0.1.0"
-description = "Add your description here"
-requires-python = ">=3.11"
-dependencies = [
-    "aiosqlite>=0.22.1",
-    "alembic>=1.18.3",
-    "asyncpg>=0.31.0",
-    "bcrypt>=5.0.0",
-    "email-validator>=2.3.0",
-    "fastapi>=0.128.0",
-    "httpx>=0.28.1",
-    "passlib>=1.7.4",
-    "psycopg2-binary>=2.9.11",
-    "pydantic>=2.12.5",
-    "pydantic-settings>=2.12.0",
-    "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
-    "pytest-cov>=7.0.0",
-    "python-jose>=3.5.0",
-    "python-multipart>=0.0.22",
-    "sqlalchemy>=2.0.46",
-    "uvicorn>=0.40.0",
-]
+description = "Gaelic Gym Booker"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+packages = ["backend"]
+
+[tool.setuptools.package-dir]
+"" = "."

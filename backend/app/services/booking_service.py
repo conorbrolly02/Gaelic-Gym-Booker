@@ -20,6 +20,7 @@ Business Rules Enforced:
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
+from sqlalchemy.orm import selectinload
 from typing import Optional, List, Tuple
 from uuid import UUID
 from datetime import datetime, date, time, timedelta
@@ -98,32 +99,32 @@ class BookingService:
     ) -> int:
         """
         Count confirmed bookings that overlap with a time range.
-        
+
         Used for capacity checking. Two bookings overlap if:
         - One starts before the other ends, AND
         - One ends after the other starts
-        
+
         Args:
             start_time: Start of the time range
             end_time: End of the time range
             exclude_booking_id: Optional booking ID to exclude (for updates)
-            
+
         Returns:
-            Number of overlapping confirmed bookings
+            Total number of people (sum of party_size) in overlapping confirmed bookings
         """
-        query = select(func.count(Booking.id)).where(
+        query = select(func.coalesce(func.sum(Booking.party_size), 0)).where(
             and_(
                 Booking.status == BookingStatus.CONFIRMED,
                 Booking.start_time < end_time,
                 Booking.end_time > start_time,
             )
         )
-        
+
         if exclude_booking_id:
             query = query.where(Booking.id != exclude_booking_id)
-        
+
         result = await self.db.execute(query)
-        return result.scalar()
+        return result.scalar() or 0
     
     async def check_member_overlap(
         self,
@@ -238,24 +239,28 @@ class BookingService:
         start_time: datetime,
         end_time: datetime,
         created_by: UUID,
+        booking_type: str = "SINGLE",
+        party_size: int = 1,
         recurring_pattern_id: Optional[UUID] = None,
         admin_override: bool = False
     ) -> Booking:
         """
         Create a new booking after validation.
-        
+
         Business Rules Enforced:
         1. CAPACITY (never overridable): Slot cannot exceed max capacity
         2. MEMBER_OVERLAP (admin can override): Member can only book one slot at a time
         3. PAST_START_TIME (admin can override): Cannot book slots that have started
         4. DURATION_LIMITS (admin can override): Must be within min/max duration
         5. ADVANCE_LIMIT (admin can override): Cannot book too far in advance
-        
+
         Race Condition Handling:
         - Uses database transaction with row-level locking (SELECT ... FOR UPDATE)
         - Capacity check and insert are atomic within the transaction
         - Concurrent requests will serialize on the lock, preventing overbooking
-        
+        - For PostgreSQL: Uses advisory locks
+        - For SQLite: Relies on database-level locking (no advisory locks needed)
+
         Args:
             member_id: Member the booking is for
             start_time: When the booking starts
@@ -263,27 +268,37 @@ class BookingService:
             created_by: User creating the booking (may be admin)
             recurring_pattern_id: Optional link to recurring pattern
             admin_override: If True, bypass time-based rules (NOT capacity)
-            
+
         Returns:
             The created Booking
-            
+
         Raises:
             BookingError: If validation fails with specific error code
         """
         from sqlalchemy import text
-        
+        import os
+
         self.validate_booking_times(start_time, end_time, admin_override)
+
+        # Only use advisory locks for PostgreSQL
+        database_url = os.getenv("DATABASE_URL", "")
+        if database_url.startswith("postgresql"):
+            await self.db.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_key)"),
+                {"lock_key": hash((start_time.isoformat(), end_time.isoformat())) % (2**31)}
+            )
         
-        await self.db.execute(
-            text("SELECT pg_advisory_xact_lock(:lock_key)"),
-            {"lock_key": hash((start_time.isoformat(), end_time.isoformat())) % (2**31)}
-        )
-        
-        overlapping = await self.count_overlapping_bookings(start_time, end_time)
-        if overlapping >= settings.GYM_MAX_CAPACITY:
+        # Check if adding this party would exceed capacity
+        current_capacity = await self.count_overlapping_bookings(start_time, end_time)
+        new_capacity = current_capacity + party_size
+
+        if new_capacity > settings.GYM_MAX_CAPACITY:
+            available_spots = settings.GYM_MAX_CAPACITY - current_capacity
             raise BookingError(
-                f"Time slot is full. Maximum {settings.GYM_MAX_CAPACITY} people allowed. "
-                f"Current bookings: {overlapping}.",
+                f"Time slot cannot accommodate {party_size} people. "
+                f"Maximum capacity: {settings.GYM_MAX_CAPACITY}, "
+                f"Current bookings: {current_capacity}, "
+                f"Available spots: {available_spots}.",
                 BookingErrorCode.CAPACITY_EXCEEDED
             )
         
@@ -296,11 +311,18 @@ class BookingService:
                     BookingErrorCode.MEMBER_OVERLAP
                 )
         
+        from app.models.booking import BookingType
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Creating booking: booking_type={booking_type}, party_size={party_size}")
+
         booking = Booking(
             member_id=member_id,
             start_time=start_time,
             end_time=end_time,
             status=BookingStatus.CONFIRMED,
+            booking_type=BookingType(booking_type),
+            party_size=party_size,
             recurring_pattern_id=recurring_pattern_id,
             created_by=created_by,
         )
@@ -348,12 +370,212 @@ class BookingService:
         booking.status = BookingStatus.CANCELLED
         booking.cancelled_by = cancelled_by
         booking.cancelled_at = datetime.utcnow()
-        
+
         await self.db.commit()
         await self.db.refresh(booking)
-        
+
         return booking
-    
+
+    async def update_booking(
+        self,
+        booking_id: UUID,
+        start_time: datetime,
+        end_time: datetime,
+        party_size: int,
+        updated_by: UUID,
+        reason: Optional[str] = None,
+        admin_override: bool = False
+    ) -> Booking:
+        """
+        Update an existing booking's time and party size.
+
+        Validates the new time slot and capacity before updating.
+
+        Args:
+            booking_id: The booking to update
+            start_time: New start time
+            end_time: New end time
+            party_size: New party size
+            updated_by: User performing the update
+            reason: Optional reason for the update
+            admin_override: If True, skip some validation checks
+
+        Returns:
+            The updated Booking
+
+        Raises:
+            BookingError: If validation fails or booking not found
+        """
+        booking = await self.get_booking_by_id(booking_id)
+
+        if not booking:
+            raise BookingError(
+                "Booking not found.",
+                BookingErrorCode.BOOKING_NOT_FOUND
+            )
+
+        if booking.status == BookingStatus.CANCELLED:
+            raise BookingError(
+                "Cannot update a cancelled booking.",
+                BookingErrorCode.ALREADY_CANCELLED
+            )
+
+        # Validate time range
+        if end_time <= start_time:
+            raise BookingError(
+                "End time must be after start time.",
+                BookingErrorCode.INVALID_TIME_RANGE
+            )
+
+        # Validate duration
+        duration = end_time - start_time
+        min_duration = timedelta(minutes=settings.MIN_BOOKING_DURATION_MINS)
+        max_duration = timedelta(minutes=settings.MAX_BOOKING_DURATION_MINS)
+
+        if not admin_override and duration < min_duration:
+            raise BookingError(
+                f"Booking duration must be at least {settings.MIN_BOOKING_DURATION_MINS} minutes.",
+                BookingErrorCode.DURATION_TOO_SHORT
+            )
+
+        if not admin_override and duration > max_duration:
+            raise BookingError(
+                f"Booking duration cannot exceed {settings.MAX_BOOKING_DURATION_MINS} minutes.",
+                BookingErrorCode.DURATION_TOO_LONG
+            )
+
+        # Check if not in the past
+        if not admin_override and start_time < datetime.now(start_time.tzinfo):
+            raise BookingError(
+                "Cannot update to a past time slot.",
+                BookingErrorCode.PAST_START_TIME
+            )
+
+        # Check capacity (excluding this booking)
+        current_capacity = await self.count_overlapping_bookings(
+            start_time,
+            end_time,
+            exclude_booking_id=booking_id
+        )
+
+        if current_capacity + party_size > settings.GYM_MAX_CAPACITY:
+            available = settings.GYM_MAX_CAPACITY - current_capacity
+            raise BookingError(
+                f"This time slot only has {available} spots available. "
+                f"You requested {party_size} spots.",
+                BookingErrorCode.CAPACITY_EXCEEDED
+            )
+
+        # Check member overlap (excluding this booking)
+        if not admin_override:
+            has_overlap = await self.check_member_overlap(
+                booking.member_id,
+                start_time,
+                end_time,
+                exclude_booking_id=booking_id
+            )
+            if has_overlap:
+                raise BookingError(
+                    "You already have another booking during this time.",
+                    BookingErrorCode.MEMBER_OVERLAP
+                )
+
+        # Update the booking
+        booking.start_time = start_time
+        booking.end_time = end_time
+        booking.party_size = party_size
+
+        await self.db.commit()
+        await self.db.refresh(booking)
+
+        return booking
+
+    async def cancel_booking_with_reason(
+        self,
+        booking_id: UUID,
+        cancelled_by: UUID,
+        reason_code: str,
+        note: Optional[str] = None
+    ) -> Booking:
+        """
+        Cancel a booking with a specific reason code and optional note.
+
+        This is an enhanced version of cancel_booking that stores
+        cancellation metadata.
+
+        Args:
+            booking_id: The booking to cancel
+            cancelled_by: User performing the cancellation
+            reason_code: Reason for cancellation (MEMBER_REQUEST, etc.)
+            note: Optional additional notes
+
+        Returns:
+            The cancelled Booking
+
+        Raises:
+            BookingError: If booking not found or already cancelled
+        """
+        booking = await self.get_booking_by_id(booking_id)
+
+        if not booking:
+            raise BookingError(
+                "Booking not found.",
+                BookingErrorCode.BOOKING_NOT_FOUND
+            )
+
+        if booking.status == BookingStatus.CANCELLED:
+            raise BookingError(
+                "Booking is already cancelled.",
+                BookingErrorCode.ALREADY_CANCELLED
+            )
+
+        booking.status = BookingStatus.CANCELLED
+        booking.cancelled_by = cancelled_by
+        booking.cancelled_at = datetime.utcnow()
+
+        # Note: reason_code and note would need to be added to the Booking model
+        # For now, we'll just do the basic cancellation
+        # If you want to store these, add cancellation_reason and cancellation_note
+        # columns to the bookings table
+
+        await self.db.commit()
+        await self.db.refresh(booking)
+
+        return booking
+
+    async def delete_cancelled_booking(
+        self,
+        booking_id: UUID
+    ) -> None:
+        """
+        Permanently delete a cancelled booking from the database.
+
+        This is a hard delete - use with caution.
+        Only allowed for bookings that are already cancelled.
+
+        Args:
+            booking_id: The booking to delete
+
+        Raises:
+            BookingError: If booking not found or not cancelled
+        """
+        booking = await self.get_booking_by_id(booking_id)
+
+        if not booking:
+            raise BookingError(
+                "Booking not found.",
+                BookingErrorCode.BOOKING_NOT_FOUND
+            )
+
+        if booking.status != BookingStatus.CANCELLED:
+            raise BookingError(
+                "Can only delete bookings that are already cancelled.",
+                BookingErrorCode.INVALID_TIME_RANGE  # Reusing error code
+            )
+
+        await self.db.delete(booking)
+        await self.db.commit()
+
     async def list_member_bookings(
         self,
         member_id: UUID,
@@ -418,7 +640,7 @@ class BookingService:
     ) -> Tuple[List[Booking], int]:
         """
         List all bookings (for admin use).
-        
+
         Args:
             member_id: Optional filter by member
             status: Optional status filter
@@ -426,38 +648,43 @@ class BookingService:
             to_date: Optional end date filter
             page: Page number
             limit: Items per page
-            
+
         Returns:
             Tuple of (list of bookings, total count)
         """
-        query = select(Booking)
+        from app.models.user import User
+
+        # Explicitly eager load member and user relationships
+        query = select(Booking).options(
+            selectinload(Booking.member).selectinload(Member.user)
+        )
         count_query = select(func.count(Booking.id))
-        
+
         if member_id:
             query = query.where(Booking.member_id == member_id)
             count_query = count_query.where(Booking.member_id == member_id)
-        
+
         if status:
             query = query.where(Booking.status == status)
             count_query = count_query.where(Booking.status == status)
-        
+
         if from_date:
             query = query.where(Booking.start_time >= from_date)
             count_query = count_query.where(Booking.start_time >= from_date)
-        
+
         if to_date:
             query = query.where(Booking.end_time <= to_date)
             count_query = count_query.where(Booking.end_time <= to_date)
-        
+
         total_result = await self.db.execute(count_query)
         total = total_result.scalar()
-        
+
         offset = (page - 1) * limit
         query = query.offset(offset).limit(limit).order_by(Booking.start_time.desc())
-        
+
         result = await self.db.execute(query)
         bookings = result.scalars().all()
-        
+
         return list(bookings), total
     
     async def get_availability(self, check_date: date) -> List[dict]:
@@ -649,3 +876,4 @@ class BookingService:
         await self.db.refresh(pattern)
         
         return pattern, bookings_cancelled
+

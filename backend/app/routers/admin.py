@@ -20,7 +20,8 @@ from uuid import UUID
 
 from app.database import get_db
 from app.schemas.member import MemberWithUserResponse
-from app.schemas.booking import BookingWithMemberResponse, AdminBookingCreate
+from app.schemas.booking import BookingResponse, BookingCreate, AdminBookingCreate
+from app.schemas.admin import AdminUpdateMember
 from app.services.member_service import MemberService
 from app.services.booking_service import BookingService, BookingError, BookingErrorCode
 from app.auth.dependencies import require_admin
@@ -226,6 +227,56 @@ async def suspend_member(
 
 
 @router.patch(
+    "/members/{member_id}",
+    response_model=dict,
+    summary="Update member details (admin)",
+)
+async def update_member(
+    member_id: UUID,
+    updates: AdminUpdateMember,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Admin comprehensive member update.
+
+    Allows admins to update:
+    - Personal information (name, phone)
+    - Email address
+    - User role (MEMBER, COACH, ADMIN)
+    - Membership status
+    """
+    service = MemberService(db)
+
+    try:
+        member = await service.admin_update_member(
+            member_id=member_id,
+            full_name=updates.full_name,
+            phone=updates.phone,
+            email=updates.email,
+            role=updates.role,
+            membership_status=updates.membership_status
+        )
+
+        return {
+            "id": str(member.id),
+            "user_id": str(member.user_id),
+            "full_name": member.full_name,
+            "phone": member.phone,
+            "email": member.user.email,
+            "role": member.user.role.value,
+            "membership_status": member.membership_status.value,
+            "message": "Member updated successfully"
+        }
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.patch(
     "/members/{member_id}/reactivate",
     response_model=dict,
     summary="Reactivate a suspended member",
@@ -239,7 +290,7 @@ async def reactivate_member(
     Reactivate a suspended member.
     """
     service = MemberService(db)
-    
+
     try:
         member = await service.reactivate_member(member_id)
         
@@ -301,19 +352,43 @@ async def list_all_bookings(
         limit=limit,
     )
     
-    # Build response with member info
+    # Build response with member info, resource info, and creator info
     booking_list = []
     for booking in bookings:
+        # Safely access nested attributes
+        member_name = "Unknown"
+        member_email = "Unknown"
+
+        if booking.member:
+            member_name = booking.member.full_name
+            if hasattr(booking.member, 'user') and booking.member.user:
+                member_email = booking.member.user.email
+
+        # Get resource/facility name
+        resource_name = "Main Gym"  # Default for legacy bookings
+        if booking.resource:
+            resource_name = booking.resource.name
+
+        # Get creator name
+        creator_name = "Unknown"
+        if booking.creator:
+            creator_name = booking.creator.email
+
         booking_list.append({
             "id": str(booking.id),
             "member_id": str(booking.member_id),
-            "member_name": booking.member.full_name if booking.member else "Unknown",
-            "member_email": booking.member.user.email if booking.member and booking.member.user else "Unknown",
+            "member_name": member_name,
+            "member_email": member_email,
+            "resource_id": str(booking.resource_id) if booking.resource_id else None,
+            "resource_name": resource_name,
             "start_time": booking.start_time,
             "end_time": booking.end_time,
             "status": booking.status.value,
+            "booking_type": booking.booking_type.value if hasattr(booking.booking_type, 'value') else booking.booking_type,
+            "party_size": booking.party_size,
             "recurring_pattern_id": str(booking.recurring_pattern_id) if booking.recurring_pattern_id else None,
             "created_by": str(booking.created_by),
+            "creator_name": creator_name,
             "created_at": booking.created_at,
         })
     
@@ -391,12 +466,14 @@ async def create_booking_for_member(
         )
     
     booking_service = BookingService(db)
-    
+
     try:
         booking = await booking_service.create_booking(
             member_id=booking_data.member_id,
             start_time=booking_data.start_time,
             end_time=booking_data.end_time,
+            booking_type=booking_data.booking_type,
+            party_size=booking_data.party_size,
             created_by=admin.id,
             admin_override=override_rules,
         )
@@ -503,3 +580,4 @@ async def get_stats(
         "active_members": active_members.scalar(),
         "bookings_today": bookings_today.scalar(),
     }
+

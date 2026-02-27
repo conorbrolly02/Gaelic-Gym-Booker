@@ -16,6 +16,9 @@ import { bookingApi } from "@/lib/api";
 import { Booking } from "@/types";
 import Alert from "@/components/Alert";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import EditBookingModal from "@/components/EditBookingModal";
+import CancelBookingModal from "@/components/CancelBookingModal";
+import DeleteCancelledButton from "@/components/DeleteCancelledButton";
 
 type FilterType = "upcoming" | "past" | "all";
 
@@ -211,6 +214,8 @@ export default function MyBookingsPage() {
                   <tr className="border-b border-gray-200">
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Date</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Time</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Facility</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Type</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Status</th>
                     <th className="text-right py-3 px-4 font-medium text-gray-600">Actions</th>
                   </tr>
@@ -228,6 +233,14 @@ export default function MyBookingsPage() {
                         <td className="py-4 px-4 text-gray-600">
                           {start.time} - {end.time}
                         </td>
+                        <td className="py-4 px-4 text-gray-600">
+                          {booking.resource_name || "Main Gym"}
+                        </td>
+                        <td className="py-4 px-4 text-gray-600 text-sm">
+                          {booking.booking_type === "TEAM"
+                            ? `Team (${booking.party_size})`
+                            : "Individual"}
+                        </td>
                         <td className="py-4 px-4">
                           <span className={`badge ${getStatusBadge(booking.status)}`}>
                             {booking.status}
@@ -238,7 +251,7 @@ export default function MyBookingsPage() {
                             <button
                               onClick={() => handleCancel(booking.id)}
                               disabled={cancellingId === booking.id}
-                              className="text-red-600 hover:text-red-700 font-medium text-sm 
+                              className="text-red-600 hover:text-red-700 font-medium text-sm
                                          disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               {cancellingId === booking.id ? "Cancelling..." : "Cancel"}
@@ -269,6 +282,13 @@ export default function MyBookingsPage() {
                         <div className="text-sm text-gray-600">
                           {start.time} - {end.time}
                         </div>
+                        <div className="text-sm text-gray-600 mt-1">
+                          {booking.resource_name || "Main Gym"}
+                          {" • "}
+                          {booking.booking_type === "TEAM"
+                            ? `Team (${booking.party_size} people)`
+                            : "Individual"}
+                        </div>
                       </div>
                       <span className={`badge ${getStatusBadge(booking.status)}`}>
                         {booking.status}
@@ -279,8 +299,8 @@ export default function MyBookingsPage() {
                       <button
                         onClick={() => handleCancel(booking.id)}
                         disabled={cancellingId === booking.id}
-                        className="mt-3 w-full py-2 text-red-600 border border-red-200 
-                                   rounded-lg text-sm font-medium hover:bg-red-50 
+                        className="mt-3 w-full py-2 text-red-600 border border-red-200
+                                   rounded-lg text-sm font-medium hover:bg-red-50
                                    disabled:opacity-50 transition-colors"
                       >
                         {cancellingId === booking.id ? "Cancelling..." : "Cancel Booking"}

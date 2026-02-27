@@ -20,9 +20,8 @@ from app.schemas.member import (
 from app.schemas.booking import (
     BookingCreate,
     BookingResponse,
-    BookingWithMemberResponse,
     AvailabilityResponse,
-    SlotAvailability,
+    AvailabilitySlot,
 )
 from app.schemas.recurring import (
     RecurringPatternCreate,
@@ -31,7 +30,7 @@ from app.schemas.recurring import (
 
 __all__ = [
     "UserCreate",
-    "UserLogin", 
+    "UserLogin",
     "UserResponse",
     "TokenData",
     "MemberCreate",
@@ -40,9 +39,8 @@ __all__ = [
     "MemberWithUserResponse",
     "BookingCreate",
     "BookingResponse",
-    "BookingWithMemberResponse",
     "AvailabilityResponse",
-    "SlotAvailability",
+    "AvailabilitySlot",
     "RecurringPatternCreate",
     "RecurringPatternResponse",
 ]

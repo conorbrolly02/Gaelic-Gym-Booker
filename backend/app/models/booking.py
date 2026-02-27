@@ -7,8 +7,8 @@ The model supports both one-time and recurring bookings.
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, DateTime, ForeignKey, Enum as SQLEnum, Integer
+from app.models.types import GUID
 from sqlalchemy.orm import relationship
 import enum
 
@@ -18,14 +18,27 @@ from app.database import Base
 class BookingStatus(str, enum.Enum):
     """
     Enum defining booking statuses.
-    
+
     - CONFIRMED: Active booking
     - CANCELLED: Booking was cancelled (soft delete)
-    
+
     Note: Values must match the PostgreSQL enum values (uppercase)
     """
     CONFIRMED = "CONFIRMED"
     CANCELLED = "CANCELLED"
+
+
+class BookingType(str, enum.Enum):
+    """
+    Enum defining booking types.
+
+    - SINGLE: Individual booking (1 person)
+    - TEAM: Team/group booking (multiple people)
+
+    Note: Values must match the PostgreSQL enum values (uppercase)
+    """
+    SINGLE = "SINGLE"
+    TEAM = "TEAM"
 
 
 class Booking(Base):
@@ -54,7 +67,7 @@ class Booking(Base):
     __tablename__ = "bookings"
     
     id = Column(
-        UUID(as_uuid=True),
+        GUID,
         primary_key=True,
         default=uuid.uuid4,
         comment="Unique booking identifier"
@@ -62,11 +75,21 @@ class Booking(Base):
     
     # Which member the booking is for
     member_id = Column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("members.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,  # Index for fast member booking lookups
         comment="Member this booking is for"
+    )
+
+    # Which resource is being booked (pitch, gym, ball wall, etc.)
+    # NULL for legacy gym bookings (before resource model was introduced)
+    resource_id = Column(
+        GUID,
+        ForeignKey("resources.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment="Resource being booked (pitch, gym, ball wall, etc.)"
     )
     
     # Booking time window
@@ -92,11 +115,65 @@ class Booking(Base):
         index=True,  # Index for filtering active bookings
         comment="Current booking status"
     )
+
+    # Booking type - single or team
+    booking_type = Column(
+        SQLEnum(BookingType),
+        nullable=False,
+        default=BookingType.SINGLE,
+        comment="Type of booking (single or team)"
+    )
+
+    # Party size - number of people for this booking
+    # For single bookings, this is 1
+    # For team bookings, this can be 1-20
+    party_size = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment="Number of people included in this booking"
+    )
+
+    # Area - for pitch bookings only
+    # Valid values: "whole", "half-left", "half-right",
+    #               "quarter-tl", "quarter-tr", "quarter-bl", "quarter-br"
+    # NULL for non-pitch bookings (gym, ball wall, etc.)
+    area = Column(
+        String(20),
+        nullable=True,
+        comment="Pitch area for pitch bookings (whole/half-left/half-right/quarter-*)"
+    )
+
+    # Pitch booking specific fields
+    # These fields are used for pitch bookings to provide additional context
+    title = Column(
+        String(200),
+        nullable=True,
+        comment="Booking title/description (for pitch bookings)"
+    )
+
+    requester_name = Column(
+        String(100),
+        nullable=True,
+        comment="Name of person requesting the booking (for pitch bookings)"
+    )
+
+    team_name = Column(
+        String(100),
+        nullable=True,
+        comment="Team or organization name (for pitch bookings)"
+    )
+
+    notes = Column(
+        String(500),
+        nullable=True,
+        comment="Additional notes about the booking (for pitch bookings)"
+    )
     
     # Optional link to recurring pattern
     # NULL means this is a one-time booking
     recurring_pattern_id = Column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("recurring_patterns.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
@@ -106,7 +183,7 @@ class Booking(Base):
     # Track who created the booking
     # If different from member's user_id, an admin created it
     created_by = Column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
         comment="User who created this booking"
@@ -114,7 +191,7 @@ class Booking(Base):
     
     # Cancellation tracking
     cancelled_by = Column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         comment="User who cancelled this booking"
@@ -155,7 +232,13 @@ class Booking(Base):
         back_populates="bookings",
         lazy="selectin"
     )
-    
+
+    resource = relationship(
+        "Resource",
+        foreign_keys=[resource_id],
+        lazy="selectin"
+    )
+
     creator = relationship(
         "User",
         foreign_keys=[created_by],
@@ -165,3 +248,4 @@ class Booking(Base):
     def __repr__(self):
         """String representation for debugging."""
         return f"<Booking {self.start_time} - {self.end_time} ({self.status.value})>"
+

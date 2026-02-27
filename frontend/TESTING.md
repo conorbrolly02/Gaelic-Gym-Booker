@@ -7,7 +7,7 @@
 ```bash
 npm install --save-dev jest @testing-library/react @testing-library/jest-dom @types/jest jest-environment-jsdom
 ```
-
+cl
 ### Configure Jest
 
 Create `jest.config.js`:

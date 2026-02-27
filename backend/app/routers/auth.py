@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.schemas.auth import UserCreate, UserLogin, UserResponse, MessageResponse
+from app.schemas.auth import UserCreate, UserLogin, UserResponse, MessageResponse, UpdateUserProfile
 from app.services.auth_service import AuthService
 from app.auth.security import create_access_token, create_refresh_token, decode_token
 from app.auth.dependencies import get_current_user
@@ -265,3 +265,59 @@ async def get_me(
         "user": user_response,
         "member": member_response,
     }
+
+
+@router.patch(
+    "/me",
+    response_model=dict,
+    summary="Update current user profile",
+)
+async def update_my_profile(
+    updates: UpdateUserProfile,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update the current user's email and/or password.
+
+    Requires current password for verification when changing email or password.
+    Returns updated user information.
+    """
+    service = AuthService(db)
+
+    try:
+        updated_user = await service.update_user_profile(
+            user_id=user.id,
+            email=updates.email,
+            current_password=updates.current_password,
+            new_password=updates.new_password
+        )
+
+        user_response = {
+            "id": str(updated_user.id),
+            "email": updated_user.email,
+            "role": updated_user.role.value,
+            "is_active": updated_user.is_active,
+        }
+
+        member_response = None
+        if updated_user.member:
+            member_response = {
+                "id": str(updated_user.member.id),
+                "full_name": updated_user.member.full_name,
+                "phone": updated_user.member.phone,
+                "membership_status": updated_user.member.membership_status.value,
+            }
+
+        return {
+            "message": "Profile updated successfully",
+            "user": user_response,
+            "member": member_response,
+        }
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+

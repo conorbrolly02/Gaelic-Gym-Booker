@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 from app.database import init_db
 from app.routers import auth_router, members_router, bookings_router, admin_router
+from app.routers.pitches import router as pitches_router
 
 
 @asynccontextmanager
@@ -92,6 +93,8 @@ app.add_middleware(
     allow_methods=["*"],
     # Allow all headers
     allow_headers=["*"],
+    # Expose headers to the frontend
+    expose_headers=["*"],
 )
 
 # Register API routers with /api/v1 prefix
@@ -99,6 +102,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(members_router, prefix="/api/v1")
 app.include_router(bookings_router, prefix="/api/v1")
+app.include_router(pitches_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 
 
@@ -124,3 +128,4 @@ async def health_check():
     Returns 200 OK if the service is healthy.
     """
     return {"status": "healthy"}
+

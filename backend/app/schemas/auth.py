@@ -110,3 +110,25 @@ class MessageResponse(BaseModel):
     Simple message response for operations like logout.
     """
     message: str
+
+
+class UpdateUserProfile(BaseModel):
+    """
+    Schema for updating user profile (email and password).
+
+    All fields are optional - only provided fields are updated.
+    """
+    email: Optional[EmailStr] = Field(
+        None,
+        description="New email address"
+    )
+    current_password: Optional[str] = Field(
+        None,
+        description="Current password (required when changing email or password)"
+    )
+    new_password: Optional[str] = Field(
+        None,
+        min_length=8,
+        max_length=100,
+        description="New password (min 8 characters)"
+    )
