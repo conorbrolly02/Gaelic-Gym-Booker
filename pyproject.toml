@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gaelic-gym-booker"
+version = "0.1.0"
+description = "Gaelic Gym Booker"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+packages = ["backend"]
+
+[tool.setuptools.package-dir]
+"" = "."

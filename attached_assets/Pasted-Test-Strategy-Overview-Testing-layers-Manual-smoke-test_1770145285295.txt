@@ -1,0 +1,152 @@
+Test Strategy Overview
+
+Testing layers
+	•	Manual smoke tests – quick confidence checks
+	•	Backend automated tests – FastAPI + pytest
+	•	Integration tests – DB + API together
+	•	Frontend tests – component + flow tests
+	•	Negative tests – security & abuse prevention
+
+Test data
+	•	Admin user
+	•	Active member
+	•	Inactive / expired member
+	•	Fully-booked time slot
+	•	Future time slot
+	•	Past time slot
+
+⸻
+
+👤 2. User & Membership Test Scenarios
+
+Membership Management
+	•	✅ Admin can create a new member
+	•	✅ Member is inactive by default
+	•	✅ Admin can activate a member
+	•	❌ Inactive member cannot log in
+	•	❌ Deleted member cannot authenticate
+	•	❌ Duplicate email addresses are rejected
+
+Authentication
+	•	✅ Member can log in with valid credentials
+	•	❌ Member cannot log in with invalid password
+	•	❌ Member cannot access admin endpoints
+	•	❌ Non-authenticated users cannot access protected routes
+	•	✅ JWT expires correctly and forces re-login
+
+⸻
+
+🏋️ 3. Gym Slot Management Scenarios
+
+Time Slot Creation (Admin)
+	•	✅ Admin can create a gym time slot
+	•	❌ Non-admin cannot create slots
+	•	❌ Slot start time must be before end time
+	•	❌ Overlapping slots are rejected (if required)
+	•	❌ Slots cannot be created in the past
+
+Slot Visibility
+	•	✅ Members see only future slots
+	•	❌ Members cannot see admin-only metadata
+	•	❌ Past slots are hidden or read-only
+
+⸻
+
+📅 4. Booking Scenarios (Core Functionality)
+
+Happy Path
+	•	✅ Active member can book an available slot
+	•	✅ Booking appears in member dashboard
+	•	✅ Booking appears in admin view
+	•	✅ Member can cancel their booking
+	•	✅ Slot availability updates after booking/cancellation
+
+Capacity Rules
+	•	❌ Member cannot book a full slot
+	•	❌ Booking fails gracefully when last spot is taken simultaneously
+	•	✅ Slot shows “full” when capacity reached
+
+⸻
+
+🔁 5. Booking Constraints & Edge Cases
+
+One Booking Rule
+	•	❌ Member cannot book two overlapping slots
+	•	❌ Member cannot book two slots on the same time window
+	•	✅ Member can book a new slot after cancelling existing one
+
+Time-Based Rules
+	•	❌ Member cannot book a slot in the past
+	•	❌ Member cannot cancel a slot after it has started
+	•	❌ Booking fails if cutoff time has passed
+
+Data Integrity
+	•	❌ Booking cannot exist without a valid member
+	•	❌ Booking cannot exist without a valid slot
+	•	❌ Duplicate bookings for same user/slot are rejected
+
+⸻
+
+🛡️ 6. Security & Authorization Tests
+
+Authorization
+	•	❌ Member cannot access admin endpoints
+	•	❌ Member cannot view other members’ bookings
+	•	❌ Member cannot cancel another member’s booking
+	•	❌ Admin cannot impersonate member bookings (unless explicitly allowed)
+
+Abuse & Validation
+	•	❌ Invalid payloads are rejected
+	•	❌ SQL injection attempts fail
+	•	❌ Rate-limiting blocks excessive booking attempts
+	•	❌ Expired JWT is rejected
+
+⸻
+
+🧩 7. Frontend UI Test Scenarios
+
+Login Flow
+	•	✅ Login form validates inputs
+	•	❌ Error shown on incorrect credentials
+	•	✅ Successful login redirects correctly
+	•	❌ Logged-out users redirected to login page
+
+Booking Flow
+	•	✅ Available slots display correctly
+	•	❌ “Book” button disabled for full slots
+	•	❌ “Book” button disabled for inactive members
+	•	✅ Booking success message shown
+	•	❌ Booking error message shown on failure
+
+Dashboard
+	•	✅ Member sees only their bookings
+	•	❌ Admin sees all bookings
+	•	✅ Cancel button removes booking from UI immediately
+
+⸻
+
+🔄 8. Failure & Recovery Scenarios
+	•	❌ Backend unavailable → frontend shows friendly error
+	•	❌ Network failure during booking → no partial booking
+	•	❌ Page refresh does not lose auth state
+	•	❌ Double-click booking does not create duplicates
+
+⸻
+
+🧪 9. Automation Mapping (What to Automate First)
+
+Backend (pytest)
+
+Automate first:
+	•	Auth tests
+	•	Booking capacity tests
+	•	Overlapping booking tests
+	•	Role-based access tests
+
+Frontend (Playwright / Cypress)
+
+Automate first:
+	•	Login flow
+	•	Booking happy path
+	•	Booking full-slot failure
+	•	Cancel booking flow
