@@ -2,510 +2,443 @@
 
 /**
  * User Settings Page
+ * =============================================================================
+ * PURPOSE
+ *  - Allow the currently authenticated user to view and update profile details.
+ *  - Allow the user to change password securely.
  *
- * Allows authenticated users to update their profile details:
- * - Personal information (full name, phone)
- * - Email address
- * - Password
+ * SECURITY
+ *  - We NEVER reveal the user's existing password (not even masked).
+ *  - The "eye" icon only toggles visibility of WHAT THE USER IS TYPING NOW.
+ *  - If the user forgot the current password, the correct flow is: "Forgot password" → reset via email.
  *
- * All changes require the current password for security verification.
+ * HOW IT WORKS
+ *  - On mount, we load the user profile from the API (GET /api/users/me).
+ *  - "Save changes" calls PUT /api/users/me with edited fields.
+ *  - "Change password" calls POST /api/auth/change-password with { current_password, new_password }.
  */
 
-import { useState, useEffect } from "react";
-import { useAuth } from "@/context/AuthContext";
-import { memberApi, authApi } from "@/lib/api";
-import Alert from "@/components/Alert";
+
+
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { userApi } from "@/lib/api";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import Alert from "@/components/Alert";
 
-export default function SettingsPage() {
-  const { user, member, refreshUser } = useAuth();
+type Profile = {
+  full_name: string;
+  email: string;
+  phone?: string | null;
+  // Add more optional profile fields here if your backend stores them:
+  // display_name?: string | null;
+  // avatar_url?: string | null;
+};
 
-  // Form states
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
+// Simple email/phone validators (client-side only; server will also validate)
+const isValidEmail = (v: string) => /^\S+@\S+\.\S+$/.test(v);
+const isValidPhone = (v: string) =>
+  v.trim() === "" || /^[\d+\-\s()]{6,}$/.test(v);
+
+// New password client-side guardrails (you can tune these)
+const passwordErrors = (pwd: string): string[] => {
+  const issues: string[] = [];
+  if (pwd.length < 8) issues.push("At least 8 characters");
+  if (!/[A-Z]/.test(pwd)) issues.push("One uppercase letter");
+  if (!/[a-z]/.test(pwd)) issues.push("One lowercase letter");
+  if (!/[0-9]/.test(pwd)) issues.push("One number");
+  return issues;
+};
+
+export default function UserSettingsPage() {
+  // ---------------------------- PROFILE STATE -------------------------------
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profile, setProfile] = useState<Profile>({
+    full_name: "",
+    email: "",
+    phone: "",
+  });
+  const [initialProfile, setInitialProfile] = useState<Profile | null>(null);
+  const profileDirty = useMemo(() => {
+    if (!initialProfile) return false;
+    return (
+      profile.full_name !== initialProfile.full_name ||
+      profile.email !== initialProfile.email ||
+      (profile.phone ?? "") !== (initialProfile.phone ?? "")
+    );
+  }, [profile, initialProfile]);
+
+  // ---------------------------- PASSWORD STATE ------------------------------
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState<string | null>(null);
+  const [changingPw, setChangingPw] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
-  // Password visibility toggles
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  // UI states
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // Track which section is being edited
-  const [editingSection, setEditingSection] = useState<"personal" | "email" | "password" | null>(null);
-
-  // Initialize form with user data
+  // ----------------------------- LOAD PROFILE -------------------------------
   useEffect(() => {
-    if (member) {
-      setFullName(member.full_name || "");
-      setPhone(member.phone || "");
-    }
-    if (user) {
-      setEmail(user.email || "");
-    }
-  }, [user, member]);
+    let mounted = true;
+    (async () => {
+      try {
+        setLoadingProfile(true);
+        setProfileError(null);
+        const me = await userApi.getProfile();
+        if (mounted) {
+          setProfile({
+            full_name: me.full_name ?? "",
+            email: me.email ?? "",
+            phone: me.phone ?? "",
+          });
+          setInitialProfile({
+            full_name: me.full_name ?? "",
+            email: me.email ?? "",
+            phone: me.phone ?? "",
+          });
+        }
+      } catch (err: any) {
+        if (mounted) {
+          setProfileError(
+            err?.message ?? "Failed to load profile. Please try again."
+          );
+        }
+      } finally {
+        if (mounted) setLoadingProfile(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-  // Clear messages after 5 seconds
-  useEffect(() => {
-    if (success || error) {
-      const timer = setTimeout(() => {
-        setSuccess(null);
-        setError(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [success, error]);
-
-  /**
-   * Handle personal information update (full name, phone)
-   */
-  const handlePersonalInfoUpdate = async (e: React.FormEvent) => {
+  // --------------------------- SAVE PROFILE ---------------------------------
+  const onSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    setLoading(true);
-
+    if (!isValidEmail(profile.email)) {
+      setProfileError("Please enter a valid email address.");
+      return;
+    }
+    if (!isValidPhone(profile.phone ?? "")) {
+      setProfileError(
+        "Please enter a valid phone number (digits, spaces, +, -, and parentheses)."
+      );
+      return;
+    }
     try {
-      await memberApi.updateProfile({
-        full_name: fullName,
-        phone: phone || undefined,
+      setSavingProfile(true);
+      setProfileError(null);
+      const updated = await userApi.updateProfile({
+        full_name: profile.full_name.trim(),
+        email: profile.email.trim(),
+        phone: (profile.phone ?? "").trim() || null,
       });
-
-      await refreshUser();
-      setSuccess("Personal information updated successfully!");
-      setEditingSection(null);
+      setInitialProfile(updated);
     } catch (err: any) {
-      setError(err.message || "Failed to update personal information");
+      setProfileError(err?.message ?? "Failed to save changes.");
     } finally {
-      setLoading(false);
+      setSavingProfile(false);
     }
   };
 
-  /**
-   * Handle email update
-   */
-  const handleEmailUpdate = async (e: React.FormEvent) => {
+  // -------------------------- CHANGE PASSWORD -------------------------------
+  const onChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setSuccess(null);
+    setPwError(null);
+    setPwSuccess(null);
 
     if (!currentPassword) {
-      setError("Current password is required to change email");
+      setPwError("Please enter your current password.");
       return;
     }
-
-    setLoading(true);
+    if (newPassword !== confirmNewPassword) {
+      setPwError("New passwords do not match.");
+      return;
+    }
+    const issues = passwordErrors(newPassword);
+    if (issues.length > 0) {
+      setPwError(`Please improve your new password: ${issues.join(", ")}`);
+      return;
+    }
 
     try {
-      await authApi.updateProfile({
-        email,
-        current_password: currentPassword,
-      });
-
-      await refreshUser();
-      setSuccess("Email updated successfully!");
-      setCurrentPassword("");
-      setEditingSection(null);
-    } catch (err: any) {
-      setError(err.message || "Failed to update email");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /**
-   * Handle password update
-   */
-  const handlePasswordUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-
-    // Validation
-    if (!currentPassword) {
-      setError("Current password is required");
-      return;
-    }
-
-    if (!newPassword) {
-      setError("New password is required");
-      return;
-    }
-
-    if (newPassword.length < 8) {
-      setError("New password must be at least 8 characters");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError("New passwords do not match");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      await authApi.updateProfile({
+      setChangingPw(true);
+      await userApi.changePassword({
         current_password: currentPassword,
         new_password: newPassword,
       });
-
-      setSuccess("Password updated successfully!");
+      setPwSuccess("Password changed successfully.");
       setCurrentPassword("");
       setNewPassword("");
-      setConfirmPassword("");
-      setEditingSection(null);
+      setConfirmNewPassword("");
+      setShowCurrent(false);
+      setShowNew(false);
+      setShowConfirm(false);
     } catch (err: any) {
-      setError(err.message || "Failed to update password");
+      setPwError(err?.message ?? "Failed to change password.");
     } finally {
-      setLoading(false);
+      setChangingPw(false);
     }
   };
 
-  /**
-   * Cancel editing and reset form
-   */
-  const handleCancel = () => {
-    if (member) {
-      setFullName(member.full_name || "");
-      setPhone(member.phone || "");
-    }
-    if (user) {
-      setEmail(user.email || "");
-    }
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
-    setEditingSection(null);
-    setError(null);
-  };
-
-  if (!user || !member) {
-    return <LoadingSpinner fullScreen text="Loading settings..." />;
+  // ------------------------------- RENDER -----------------------------------
+  if (loadingProfile) {
+    return <LoadingSpinner fullScreen text="Loading your settings..." />;
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-gray-900 mb-8">User Settings</h1>
-
-      {/* Alerts */}
-      {success && <Alert type="success" message={success} className="mb-6" />}
-      {error && <Alert type="error" message={error} className="mb-6" />}
-
-      {/* Personal Information Section */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">Personal Information</h2>
-          {editingSection !== "personal" && (
-            <button
-              onClick={() => setEditingSection("personal")}
-              className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
-            >
-              Edit
-            </button>
-          )}
-        </div>
-
-        <form onSubmit={handlePersonalInfoUpdate}>
-          <div className="space-y-4">
-            {/* Full Name */}
-            <div>
-              <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
-                Full Name
-              </label>
-              <input
-                type="text"
-                id="fullName"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                disabled={editingSection !== "personal"}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                required
-              />
-            </div>
-
-            {/* Phone */}
-            <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
-                Phone Number (Optional)
-              </label>
-              <input
-                type="tel"
-                id="phone"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                disabled={editingSection !== "personal"}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                placeholder="+353 87 123 4567"
-              />
-            </div>
-          </div>
-
-          {editingSection === "personal" && (
-            <div className="flex gap-3 mt-6">
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "Saving..." : "Save Changes"}
-              </button>
-              <button
-                type="button"
-                onClick={handleCancel}
-                disabled={loading}
-                className="px-6 py-2 bg-gray-200 text-gray-700 font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </form>
+    <div className="px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      {/* Header */}
+      <div className="mb-2">
+        <h1 className="text-2xl font-semibold text-gray-900">User settings</h1>
+        <p className="text-sm text-gray-500">
+          Manage your profile details and update your password.
+        </p>
       </div>
 
-      {/* Email Section */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">Email Address</h2>
-          {editingSection !== "email" && (
-            <button
-              onClick={() => setEditingSection("email")}
-              className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
-            >
-              Edit
-            </button>
-          )}
-        </div>
+      {/* Profile form card */}
+      <section className="card p-6">
+        <h2 className="text-lg font-semibold text-gray-900">Profile</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Update your personal information. If you change your email, you may be
+          asked to verify it next sign-in.
+        </p>
 
-        <form onSubmit={handleEmailUpdate}>
-          <div className="space-y-4">
-            {/* Email */}
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                id="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={editingSection !== "email"}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                required
-              />
-            </div>
+        {profileError && (
+          <div className="mb-4">
+            <Alert type="error" message={profileError} onClose={() => setProfileError(null)} />
+          </div>
+        )}
 
-            {editingSection === "email" && (
-              <div>
-                <label htmlFor="currentPasswordEmail" className="block text-sm font-medium text-gray-700 mb-1">
-                  Current Password <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showCurrentPassword ? "text" : "password"}
-                    id="currentPasswordEmail"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                    aria-label={showCurrentPassword ? "Hide password" : "Show password"}
-                  >
-                    {showCurrentPassword ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                <p className="text-sm text-gray-500 mt-1">Required to verify your identity</p>
-              </div>
+        <form onSubmit={onSaveProfile} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Full name */}
+          <div className="flex flex-col">
+            <label htmlFor="full_name" className="text-sm font-medium text-gray-700">
+              Full name
+            </label>
+            <input
+              id="full_name"
+              type="text"
+              value={profile.full_name}
+              onChange={(e) => setProfile((p) => ({ ...p, full_name: e.target.value }))}
+              className="mt-1 rounded-md border-gray-300 focus:border-primary-500 focus:ring-primary-500"
+              placeholder="e.g. Conor Brolly"
+              required
+            />
+          </div>
+
+          {/* Email */}
+          <div className="flex flex-col">
+            <label htmlFor="email" className="text-sm font-medium text-gray-700">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={profile.email}
+              onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
+              className="mt-1 rounded-md border-gray-300 focus:border-primary-500 focus:ring-primary-500"
+              placeholder="you@example.com"
+              required
+            />
+            {!isValidEmail(profile.email) && profile.email.trim() !== "" && (
+              <p className="mt-1 text-xs text-red-600">Enter a valid email address.</p>
             )}
           </div>
 
-          {editingSection === "email" && (
-            <div className="flex gap-3 mt-6">
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "Updating..." : "Update Email"}
-              </button>
-              <button
-                type="button"
-                onClick={handleCancel}
-                disabled={loading}
-                className="px-6 py-2 bg-gray-200 text-gray-700 font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </form>
-      </div>
+          {/* Phone */}
+          <div className="flex flex-col sm:col-span-2">
+            <label htmlFor="phone" className="text-sm font-medium text-gray-700">
+              Phone (optional)
+            </label>
+            <input
+              id="phone"
+              type="tel"
+              value={profile.phone ?? ""}
+              onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
+              className="mt-1 rounded-md border-gray-300 focus:border-primary-500 focus:ring-primary-500"
+              placeholder="+44 7700 900000"
+            />
+            {!isValidPhone(profile.phone ?? "") && (
+              <p className="mt-1 text-xs text-red-600">
+                Use digits, spaces, +, -, or parentheses.
+              </p>
+            )}
+          </div>
 
-      {/* Password Section */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">Password</h2>
-          {editingSection !== "password" && (
+          {/* Actions */}
+          <div className="sm:col-span-2 mt-2 flex items-center gap-3">
             <button
-              onClick={() => setEditingSection("password")}
-              className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
+              type="submit"
+              disabled={!profileDirty || savingProfile}
+              className={`px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors
+                ${!profileDirty || savingProfile
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-primary-600 hover:bg-primary-700"}
+              `}
             >
-              Change Password
+              {savingProfile ? "Saving…" : "Save changes"}
             </button>
-          )}
-        </div>
+            <button
+              type="button"
+              disabled={!profileDirty || savingProfile}
+              onClick={() => initialProfile && setProfile(initialProfile)}
+              className="px-4 py-2 rounded-lg border text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+            >
+              Reset
+            </button>
+          </div>
+        </form>
+      </section>
 
-        {editingSection !== "password" ? (
-          <p className="text-gray-600">
-            Your password is securely stored and encrypted. Click &quot;Change Password&quot; to update it.
-          </p>
-        ) : (
-          <form onSubmit={handlePasswordUpdate}>
-            <div className="space-y-4">
-              {/* Current Password */}
-              <div>
-                <label htmlFor="currentPasswordChange" className="block text-sm font-medium text-gray-700 mb-1">
-                  Current Password <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showCurrentPassword ? "text" : "password"}
-                    id="currentPasswordChange"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                    aria-label={showCurrentPassword ? "Hide password" : "Show password"}
-                  >
-                    {showCurrentPassword ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-              </div>
+      {/* Password card */}
+      <section className="card p-6">
+        <h2 className="text-lg font-semibold text-gray-900">Password</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Choose a strong password you haven’t used elsewhere.
+        </p>
 
-              {/* New Password */}
-              <div>
-                <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                  New Password <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showNewPassword ? "text" : "password"}
-                    id="newPassword"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    minLength={8}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                    aria-label={showNewPassword ? "Hide password" : "Show password"}
-                  >
-                    {showNewPassword ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                <p className="text-sm text-gray-500 mt-1">Minimum 8 characters</p>
-              </div>
-
-              {/* Confirm Password */}
-              <div>
-                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                  Confirm New Password <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    id="confirmPassword"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
-                  >
-                    {showConfirmPassword ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "Updating..." : "Update Password"}
-              </button>
-              <button
-                type="button"
-                onClick={handleCancel}
-                disabled={loading}
-                className="px-6 py-2 bg-gray-200 text-gray-700 font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
+        {pwError && (
+          <div className="mb-4">
+            <Alert type="error" message={pwError} onClose={() => setPwError(null)} />
+          </div>
         )}
+        {pwSuccess && (
+          <div className="mb-4">
+            <Alert type="success" message={pwSuccess} onClose={() => setPwSuccess(null)} />
+          </div>
+        )}
+
+        <form onSubmit={onChangePassword} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Current password */}
+          <PasswordInput
+            id="current_password"
+            label="Current password"
+            value={currentPassword}
+            onChange={setCurrentPassword}
+            show={showCurrent}
+            setShow={setShowCurrent}
+            autoComplete="current-password"
+          />
+
+          {/* New password */}
+          <PasswordInput
+            id="new_password"
+            label="New password"
+            value={newPassword}
+            onChange={setNewPassword}
+            show={showNew}
+            setShow={setShowNew}
+            autoComplete="new-password"
+          />
+
+          {/* Confirm new password */}
+          <PasswordInput
+            id="confirm_new_password"
+            label="Confirm new password"
+            value={confirmNewPassword}
+            onChange={setConfirmNewPassword}
+            show={showConfirm}
+            setShow={setShowConfirm}
+            autoComplete="new-password"
+          />
+
+          {/* Hints for password strength */}
+          <div className="sm:col-span-2 -mt-2">
+            {newPassword.length > 0 && (
+              <ul className="list-disc list-inside text-xs text-gray-600">
+                {passwordErrors(newPassword).length === 0 ? (
+                  <li className="text-green-700">Looks strong ✔</li>
+                ) : (
+                  passwordErrors(newPassword).map((e) => (
+                    <li key={e} className="text-red-600">{e}</li>
+                  ))
+                )}
+              </ul>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="sm:col-span-2 mt-2">
+            <button
+              type="submit"
+              className={`px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors
+                ${changingPw ? "bg-gray-400 cursor-not-allowed" : "bg-primary-600 hover:bg-primary-700"}
+              `}
+              disabled={changingPw}
+            >
+              {changingPw ? "Changing…" : "Change password"}
+            </button>
+            <p className="text-xs text-gray-500 mt-2">
+              Forgot your current password?{" "}
+              <Link href="/forgot-password" className="text-primary-700 hover:underline">
+                Reset it here
+              </Link>
+              .
+            </p>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+/**
+ * Small reusable password input with a show/hide toggle.
+ * - We NEVER load or reveal any stored password; this only toggles the current input.
+ */
+function PasswordInput(props: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  setShow: (v: boolean) => void;
+  autoComplete?: string;
+}) {
+  const { id, label, value, onChange, show, setShow, autoComplete } = props;
+  return (
+    <div className="flex flex-col">
+      <label htmlFor={id} className="text-sm font-medium text-gray-700">
+        {label}
+      </label>
+      <div className="mt-1 relative">
+        <input
+          id={id}
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete={autoComplete}
+          className="w-full rounded-md border-gray-300 pr-10 focus:border-primary-500 focus:ring-primary-500"
+          required
+        />
+        <button
+          type="button"
+          onClick={() => setShow(!show)}
+          aria-label={show ? "Hide password" : "Show password"}
+          className="absolute inset-y-0 right-0 px-2 flex items-center text-gray-500 hover:text-gray-700"
+        >
+          {/* Eye / Eye-off icons (inline SVG to avoid extra deps) */}
+          {show ? (
+            // Eye-off
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                d="M13.875 18.825A10.05 10.05 0 0112 19c-5 0-9-4-9-7 0-1.03.34-2.003.94-2.828m2.485-2.485C7.24 5.686 9.54 5 12 5c5 0 9 4 9 7 0 1.163-.402 2.258-1.11 3.23M3 3l18 18M9.88 9.88A3 3 0 0114.12 14.12" />
+            </svg>
+          ) : (
+            // Eye
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          )}
+        </button>
       </div>
     </div>
   );

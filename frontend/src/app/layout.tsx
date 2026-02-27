@@ -41,10 +41,10 @@ export const viewport: Viewport = {
  */
 export const metadata: Metadata = {
   title: {
-    template: "%s | Eoghan Rua CLG Gym",
-    default: "Eoghan Rua CLG Gym Booking",
+    template: "%s | Eoghan Rua Facility Booker",
+    default: "Eoghan Rua GAC Facility Booking",
   },
-  description: "Book your gym time slots at Eoghan Rua CLG",
+  description: "Book your gym time slots at Eoghan Rua GAC",
   keywords: ["gym", "booking", "eoghan rua", "clg", "fitness"],
 };
 

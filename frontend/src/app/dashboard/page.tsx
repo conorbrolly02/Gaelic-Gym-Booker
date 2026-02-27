@@ -156,121 +156,46 @@ export default function DashboardPage() {
     startXRef.current = null;
   };
 
-  // ------------------------------ BOOKING DETAIL MODAL -------------------------------
-  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-
-  const handleBookingClick = (booking: Booking, isPast: boolean) => {
-    if (isPast) return; // Don't open modal for past bookings
-    setSelectedBooking(booking);
-    setShowDetailModal(true);
-  };
-
-  const handleEditBooking = () => {
-    if (selectedBooking) {
-      // Navigate to bookings page where they can edit
-      window.location.href = "/dashboard/bookings";
-    }
-  };
-
-  // Get facility color and background
-  const getFacilityColors = (booking: Booking): { bg: string; border: string; text: string; dot: string } => {
-    const facilityName = booking.resource_name?.toLowerCase() || "";
-
-    if (facilityName.includes("gym"))
-      return { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-900", dot: "bg-blue-600" };
-
-    if (facilityName.includes("main pitch"))
-      return { bg: "bg-green-50", border: "border-green-200", text: "text-green-900", dot: "bg-green-600" };
-
-    if (facilityName.includes("minor pitch"))
-      return { bg: "bg-lime-50", border: "border-lime-200", text: "text-lime-900", dot: "bg-lime-600" };
-
-    if (facilityName.includes("ball wall"))
-      return { bg: "bg-sky-50", border: "border-sky-200", text: "text-sky-900", dot: "bg-sky-500" };
-
-    if (facilityName.includes("room a"))
-      return { bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-900", dot: "bg-purple-600" };
-
-    if (facilityName.includes("room b"))
-      return { bg: "bg-violet-50", border: "border-violet-200", text: "text-violet-900", dot: "bg-violet-600" };
-
-    if (facilityName.includes("room"))
-      return { bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-900", dot: "bg-purple-600" };
-
-    return { bg: "bg-gray-50", border: "border-gray-200", text: "text-gray-900", dot: "bg-gray-500" };
-  };
-
   // ------------------------------ RENDER UTILS -------------------------------
   /** Row for a single booking (keeps your original visual style) */
-  const BookingRow: React.FC<{ booking: Booking; isPast: boolean }> = ({ booking, isPast }) => {
+  const BookingRow: React.FC<{ booking: Booking }> = ({ booking }) => {
     const { date, time } = formatDateTime(booking.start_time);
     const endTime = formatDateTime(booking.end_time).time;
     const today = isToday(booking.start_time);
-    const colors = getFacilityColors(booking);
-
     return (
       <div
         key={booking.id}
-        onClick={() => handleBookingClick(booking, isPast)}
-        className={`
-          flex items-center gap-4 p-3 rounded-lg border transition-all
-          ${isPast
-            ? "opacity-50 cursor-not-allowed bg-gray-100 border-gray-300"
-            : `cursor-pointer hover:shadow-md ${colors.bg} ${colors.border}`}
-          ${today && !isPast ? "ring-2 ring-primary-300" : ""}
-        `}
+        className={`flex items-center gap-4 p-3 rounded-lg border ${
+          today ? "border-primary-200 bg-primary-50" : "border-gray-200 bg-gray-50"
+        }`}
       >
-        {/* Facility color indicator */}
-        <div className={`w-1 h-16 rounded-full ${isPast ? "bg-gray-400" : colors.dot}`} />
-
         {/* Date indicator (weekday + day) */}
-        <div className={`text-center min-w-[60px] ${isPast ? "text-gray-400" : colors.text}`}>
+        <div className={`text-center min-w-[60px] ${today ? "text-primary-700" : "text-gray-600"}`}>
           <div className="text-xs font-medium uppercase">{date.split(",")[0]}</div>
           <div className="text-lg font-bold">{date.split(" ")[1]}</div>
         </div>
 
         {/* Divider */}
-        <div className={`w-px h-10 ${isPast ? "bg-gray-300" : colors.border.replace("border-", "bg-")}`} />
+        <div className={`w-px h-10 ${today ? "bg-primary-200" : "bg-gray-300"}`} />
 
         {/* Time & details */}
         <div className="flex-1">
-          <div className={`font-medium ${isPast ? "text-gray-500" : "text-gray-900"}`}>
+          <div className="font-medium text-gray-900">
             {time} - {endTime}
           </div>
-          {/* Facility name and booking type */}
-          <div className={`text-sm mt-0.5 flex items-center gap-2 ${isPast ? "text-gray-400" : "text-gray-600"}`}>
-            <span className="font-medium">{booking.resource_name || "Main Gym"}</span>
-            <span>•</span>
-            <span>
-              {booking.booking_type === "TEAM"
-                ? `Team (${booking.party_size} people)`
-                : "Individual"}
-            </span>
-          </div>
-          {today && !isPast && (
+          {/* Facility name (if present) */}
+          {"facility_name" in booking && (booking as any).facility_name ? (
+            <div className="text-sm text-gray-600">{(booking as any).facility_name}</div>
+          ) : null}
+          {today && (
             <span className="inline-block mt-1 px-2 py-0.5 bg-primary-100 text-primary-700 text-xs font-medium rounded-full">
               Today
             </span>
           )}
-          {isPast && (
-            <span className="inline-block mt-1 px-2 py-0.5 bg-gray-200 text-gray-600 text-xs font-medium rounded-full">
-              Past
-            </span>
-          )}
         </div>
 
-        {/* Status badge and click indicator */}
-        <div className="flex items-center gap-2">
-          <span className={`badge ${booking.status === "CONFIRMED" ? "badge-success" : "badge-gray"}`}>
-            {booking.status}
-          </span>
-          {!isPast && (
-            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          )}
-        </div>
+        {/* Status badge */}
+        <span className="badge badge-success">{booking.status}</span>
       </div>
     );
   };
@@ -286,7 +211,7 @@ export default function DashboardPage() {
         <h1 className="text-2xl sm:text-3xl font-bold">
           {getGreeting()}, {member?.full_name?.split(" ")[0]}!
         </h1>
-        <p className="text-primary-100 mt-1">Ready to book your gym session?</p>
+        <p className="text-primary-100 mt-1">Ready to get started?</p>
       </div>
 
       {/* ----------------------------- QUICK ACTIONS ---------------------------- */}
@@ -319,12 +244,12 @@ export default function DashboardPage() {
 
         {/* View Schedule */}
         <Link
-          href="/dashboard/schedule"
+          href="/dashboard/book"
           className="card hover:shadow-md transition-shadow flex flex-col items-center text-center p-4"
         >
           <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-3">
             <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
           <span className="text-sm font-medium text-gray-900">View Schedule</span>
@@ -471,7 +396,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="space-y-3">
                   {filteredUpcoming.map((b) => (
-                    <BookingRow key={b.id} booking={b} isPast={false} />
+                    <BookingRow key={b.id} booking={b} />
                   ))}
                 </div>
               )}
@@ -499,7 +424,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="space-y-3">
                   {filteredPast.map((b) => (
-                    <BookingRow key={b.id} booking={b} isPast={true} />
+                    <BookingRow key={b.id} booking={b} />
                   ))}
                 </div>
               )}
@@ -507,97 +432,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
-
-      {/* Booking Detail Modal */}
-      {showDetailModal && selectedBooking && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            {/* Modal Header */}
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-900">Booking Details</h3>
-                <button
-                  onClick={() => setShowDetailModal(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 space-y-4">
-              {/* Facility Badge */}
-              <div className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${getFacilityColors(selectedBooking).dot}`} />
-                <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getFacilityColors(selectedBooking).bg} ${getFacilityColors(selectedBooking).border} border ${getFacilityColors(selectedBooking).text}`}>
-                  {selectedBooking.resource_name || "Main Gym"}
-                </span>
-              </div>
-
-              {/* Date and Time */}
-              <div>
-                <div className="text-sm text-gray-500 mb-1">Date & Time</div>
-                <div className="text-gray-900 font-medium">
-                  {formatDateTime(selectedBooking.start_time).date}
-                </div>
-                <div className="text-gray-900">
-                  {formatDateTime(selectedBooking.start_time).time} - {formatDateTime(selectedBooking.end_time).time}
-                </div>
-              </div>
-
-              {/* Booking Type */}
-              <div>
-                <div className="text-sm text-gray-500 mb-1">Booking Type</div>
-                <div className="text-gray-900">
-                  {selectedBooking.booking_type === "TEAM"
-                    ? `Team Booking (${selectedBooking.party_size} people)`
-                    : "Individual Booking"}
-                </div>
-              </div>
-
-              {/* Status */}
-              <div>
-                <div className="text-sm text-gray-500 mb-1">Status</div>
-                <span className={`badge ${selectedBooking.status === "CONFIRMED" ? "badge-success" : "badge-gray"}`}>
-                  {selectedBooking.status}
-                </span>
-              </div>
-
-              {/* Creator Info */}
-              {selectedBooking.creator_name && (
-                <div>
-                  <div className="text-sm text-gray-500 mb-1">Created By</div>
-                  <div className="text-gray-900">{selectedBooking.creator_name}</div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-6 border-t border-gray-200 bg-gray-50 space-y-2">
-              <button
-                onClick={handleEditBooking}
-                className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
-              >
-                Edit Booking
-              </button>
-              <button
-                onClick={() => setShowDetailModal(false)}
-                className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
