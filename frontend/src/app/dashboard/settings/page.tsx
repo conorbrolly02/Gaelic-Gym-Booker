@@ -22,7 +22,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { userApi } from "@/lib/api";
+import { memberApi, authApi } from "@/lib/api";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import Alert from "@/components/Alert";
 
@@ -88,7 +88,7 @@ export default function UserSettingsPage() {
       try {
         setLoadingProfile(true);
         setProfileError(null);
-        const me = await userApi.getProfile();
+        const me = await memberApi.getProfile();
         if (mounted) {
           setProfile({
             full_name: me.full_name ?? "",
@@ -132,7 +132,7 @@ export default function UserSettingsPage() {
     try {
       setSavingProfile(true);
       setProfileError(null);
-      const updated = await userApi.updateProfile({
+      const updated = await memberApi.updateProfile({
         full_name: profile.full_name.trim(),
         email: profile.email.trim(),
         phone: (profile.phone ?? "").trim() || null,
@@ -167,7 +167,7 @@ export default function UserSettingsPage() {
 
     try {
       setChangingPw(true);
-      await userApi.changePassword({
+      await authApi.updateProfile({
         current_password: currentPassword,
         new_password: newPassword,
       });
