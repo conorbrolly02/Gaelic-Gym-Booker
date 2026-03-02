@@ -27,6 +27,10 @@ export interface RecurringBookingData {
   duration_mins: number;
   valid_from: string; // YYYY-MM-DD
   valid_until: string; // YYYY-MM-DD
+  title?: string;
+  requester_name?: string;
+  team_name?: string;
+  notes?: string;
 }
 
 const DAYS_OF_WEEK = [
@@ -54,6 +58,10 @@ export default function RecurringBookingModal({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [title, setTitle] = useState("");
+  const [requesterName, setRequesterName] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [notes, setNotes] = useState("");
 
   // Set default dates
   useEffect(() => {
@@ -102,6 +110,16 @@ export default function RecurringBookingModal({
     setError(null);
 
     // Validation
+    if (!title || title.length < 3) {
+      setError("Please enter a title (minimum 3 characters)");
+      return;
+    }
+
+    if (!requesterName || requesterName.length < 2) {
+      setError("Please enter requester name (minimum 2 characters)");
+      return;
+    }
+
     if (!startTime) {
       setError("Please select a start time");
       return;
@@ -146,6 +164,10 @@ export default function RecurringBookingModal({
         duration_mins: durationMins,
         valid_from: validFrom,
         valid_until: validUntil,
+        title,
+        requester_name: requesterName,
+        team_name: teamName || undefined,
+        notes: notes || undefined,
       });
       onClose();
     } catch (err: any) {
@@ -183,6 +205,64 @@ export default function RecurringBookingModal({
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Booking Details */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Title <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                minLength={3}
+                placeholder="e.g., Weekly Training Session"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Requester Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={requesterName}
+                onChange={(e) => setRequesterName(e.target.value)}
+                required
+                minLength={2}
+                placeholder="Your name"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Team Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  placeholder="e.g., Under 16s"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Additional info"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
             {/* Pattern Type Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

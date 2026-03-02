@@ -14,7 +14,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Booking } from "@/types";
-import { bookingApi } from "@/lib/api";
+import { bookingApi, pitchApi } from "@/lib/api";
 
 interface MonthlyCalendarProps {
   onDayClick?: (date: Date, bookings: Booking[]) => void;
@@ -54,23 +54,32 @@ export default function MonthlyCalendar({ onDayClick }: MonthlyCalendarProps) {
       // Check if this month is in the past
       const isPastMonth = monthEnd < today;
 
-      // Fetch appropriate bookings
-      let data: any[];
-      if (isPastMonth) {
-        // For past months, fetch past bookings
-        data = await bookingApi.getBookings({ past: true });
-      } else {
-        // For current/future months, fetch upcoming bookings
-        data = await bookingApi.getBookings({ upcoming: true });
-      }
+      // Fetch gym bookings AND pitch/ball wall bookings
+      const params = isPastMonth ? { past: true } : { upcoming: true };
+
+      const [gymBookings, pitchBookings] = await Promise.all([
+        bookingApi.getBookings(params),
+        pitchApi.getMemberPitchBookings(params)
+      ]);
+
+      // Combine all bookings
+      const allBookings = [...gymBookings, ...pitchBookings];
 
       // Filter to current month
-      const filtered = data.filter((booking) => {
-        const bookingDate = new Date(booking.start_time);
+      const filtered = allBookings.filter((booking) => {
+        const bookingDate = new Date(booking.start_time || booking.start);
         return bookingDate >= monthStart && bookingDate <= monthEnd;
       });
 
-      setBookings(filtered);
+      // Normalize booking data (handle different formats from gym vs pitch endpoints)
+      const normalized = filtered.map((booking: any) => ({
+        ...booking,
+        start_time: booking.start_time || booking.start,
+        end_time: booking.end_time || booking.end,
+        resource_name: booking.resource_name || (booking.pitch_id ? "Pitch/Ball Wall" : "Gym")
+      }));
+
+      setBookings(normalized);
     } catch (err: any) {
       setError(err.message || "Failed to load bookings");
     } finally {

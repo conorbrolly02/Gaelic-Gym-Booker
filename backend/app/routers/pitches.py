@@ -29,6 +29,7 @@ from app.schemas.pitch import (
     RecurringPitchBookingIn,
     RecurringPitchBookingOut
 )
+from datetime import datetime as dt
 from app.services.pitch_booking import PitchBookingService
 from app.config import settings
 
@@ -257,6 +258,59 @@ async def admin_create_pitch_booking(
         )
 
     return PitchBookingOut.from_booking(booking)
+
+
+# ============================================================
+# MEMBER PITCH BOOKINGS
+# ============================================================
+
+@router.get(
+    "/bookings/member",
+    response_model=List[PitchBookingOut],
+    summary="Get member's pitch and ball wall bookings"
+)
+async def get_member_pitch_bookings(
+    upcoming: bool = Query(False, description="Only upcoming bookings"),
+    past: bool = Query(False, description="Only past bookings"),
+    db: AsyncSession = Depends(get_db),
+    member: Member = Depends(get_current_member)
+):
+    """
+    Get all pitch and ball wall bookings for the current member.
+
+    Query parameters:
+    - upcoming: If true, only return future bookings
+    - past: If true, only return past bookings
+    """
+    from app.models.booking import Booking, BookingStatus
+    from sqlalchemy.orm import selectinload
+
+    # Build query with eager loading of resource
+    # Filter for only pitch/ball wall bookings (those with resource_id)
+    query = select(Booking).options(
+        selectinload(Booking.resource)
+    ).where(
+        Booking.member_id == member.id,
+        Booking.status == BookingStatus.CONFIRMED,
+        Booking.resource_id.isnot(None)  # Only resource bookings (pitch/ball wall)
+    )
+
+    # Filter by time
+    now = dt.utcnow()
+    if upcoming:
+        query = query.where(Booking.start_time >= now)
+    elif past:
+        query = query.where(Booking.start_time < now)
+
+    # Order by start time
+    query = query.order_by(Booking.start_time)
+
+    # Execute query
+    result = await db.execute(query)
+    bookings = result.scalars().all()
+
+    # Convert to response format
+    return [PitchBookingOut.from_booking(b) for b in bookings]
 
 
 # ============================================================

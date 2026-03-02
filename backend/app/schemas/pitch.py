@@ -189,6 +189,7 @@ class PitchBookingOut(BaseModel):
     created_at: datetime
     member_id: UUID
     status: Literal["CONFIRMED", "CANCELLED"]
+    resource_name: Optional[str] = None  # Added for calendar display
 
     @classmethod
     def from_booking(cls, booking):
@@ -197,6 +198,11 @@ class PitchBookingOut(BaseModel):
 
         Maps fields from the generic Booking model to pitch-specific schema.
         """
+        # Get resource name if available
+        resource_name = None
+        if hasattr(booking, 'resource') and booking.resource:
+            resource_name = booking.resource.name
+
         return cls(
             id=booking.id,
             pitch_id=booking.resource_id,
@@ -211,7 +217,8 @@ class PitchBookingOut(BaseModel):
             party_size=booking.party_size,
             created_at=booking.created_at,
             member_id=booking.member_id,
-            status=booking.status.value
+            status=booking.status.value,
+            resource_name=resource_name
         )
 
 
