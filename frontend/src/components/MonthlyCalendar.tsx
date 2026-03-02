@@ -26,8 +26,15 @@ export default function MonthlyCalendar({ onDayClick }: MonthlyCalendarProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Swipe handling for mobile
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth();
+
+  // Minimum swipe distance (in px) to trigger navigation
+  const minSwipeDistance = 50;
 
   // Fetch bookings for current month
   useEffect(() => {
@@ -163,13 +170,43 @@ export default function MonthlyCalendar({ onDayClick }: MonthlyCalendarProps) {
     return "bg-gray-500";
   };
 
+  // Touch handlers for swipe navigation
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe) {
+      nextMonth(); // Swipe left = next month
+    }
+    if (isRightSwipe) {
+      previousMonth(); // Swipe right = previous month
+    }
+  };
+
   const calendarDays = getCalendarDays();
   const monthName = currentDate.toLocaleDateString("en-IE", { month: "long", year: "numeric" });
 
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+    <div
+      className="bg-white rounded-lg shadow-md overflow-hidden"
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
       {/* Calendar Header */}
-      <div className="bg-gradient-to-r from-primary-600 to-primary-700 p-4">
+      <div className="bg-gradient-to-r from-[#903838] to-[#7d2f2f] p-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-white">{monthName}</h2>
           <div className="flex items-center gap-2">
@@ -244,7 +281,7 @@ export default function MonthlyCalendar({ onDayClick }: MonthlyCalendarProps) {
       {/* Calendar Grid */}
       {loading ? (
         <div className="p-12 text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#903838]"></div>
           <p className="mt-2 text-gray-600">Loading calendar...</p>
         </div>
       ) : error ? (
@@ -267,7 +304,7 @@ export default function MonthlyCalendar({ onDayClick }: MonthlyCalendarProps) {
                 className={`
                   border border-gray-100 p-2 min-h-[100px] aspect-square
                   transition-colors cursor-pointer
-                  ${isTodayDate ? "bg-primary-50 border-primary-300" : "bg-white hover:bg-gray-50"}
+                  ${isTodayDate ? "bg-red-50 border-red-300" : "bg-white hover:bg-gray-50"}
                   ${isPastDate && !isTodayDate ? "opacity-60" : ""}
                 `}
               >
@@ -276,7 +313,7 @@ export default function MonthlyCalendar({ onDayClick }: MonthlyCalendarProps) {
                   <span
                     className={`
                       text-sm font-semibold
-                      ${isTodayDate ? "text-primary-700" : isPastDate ? "text-gray-400" : "text-gray-700"}
+                      ${isTodayDate ? "text-red-700" : isPastDate ? "text-gray-400" : "text-gray-700"}
                     `}
                   >
                     {date.getDate()}

@@ -5,20 +5,24 @@
  *
  * Monthly calendar view showing all upcoming bookings across all facilities.
  * Features:
- * - Monthly calendar layout
+ * - Monthly calendar layout with swipe support
  * - Click on day to see detailed bookings
+ * - Create new bookings from calendar
  * - Color-coded by facility
  * - Visual booking indicators
  */
 
 import React, { useState } from "react";
 import MonthlyCalendar from "@/components/MonthlyCalendar";
+import CreateBookingModal from "@/components/CreateBookingModal";
 import { Booking } from "@/types";
 
 export default function SchedulePage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedDayBookings, setSelectedDayBookings] = useState<Booking[]>([]);
   const [showDayModal, setShowDayModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const handleDayClick = (date: Date, bookings: Booking[]) => {
     setSelectedDate(date);
@@ -26,14 +30,26 @@ export default function SchedulePage() {
     setShowDayModal(true);
   };
 
+  const handleCreateBooking = () => {
+    setShowDayModal(false);
+    setShowCreateModal(true);
+  };
+
+  const handleBookingCreated = () => {
+    setShowCreateModal(false);
+    setShowDayModal(false);
+    // Refresh calendar by updating key
+    setRefreshKey(prev => prev + 1);
+  };
+
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
     return {
-      time: date.toLocaleTimeString("en-IE", {
+      time: date.toLocaleTimeString("en-GB", {
         hour: "2-digit",
         minute: "2-digit",
       }),
-      date: date.toLocaleDateString("en-IE", {
+      date: date.toLocaleDateString("en-GB", {
         weekday: "long",
         month: "long",
         day: "numeric",
@@ -72,9 +88,23 @@ export default function SchedulePage() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
-        <p className="text-gray-600 mt-1">View all your upcoming bookings in calendar format</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
+          <p className="text-gray-600 mt-1">View all your upcoming bookings in calendar format</p>
+        </div>
+        <button
+          onClick={() => {
+            setSelectedDate(new Date());
+            setShowCreateModal(true);
+          }}
+          className="px-4 py-2 bg-[#903838] text-white rounded-lg hover:bg-[#7d2f2f] transition-colors font-medium flex items-center gap-2"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Create Booking
+        </button>
       </div>
 
       {/* Facility Legend Card */}
@@ -109,7 +139,7 @@ export default function SchedulePage() {
       </div>
 
       {/* Monthly Calendar */}
-      <MonthlyCalendar onDayClick={handleDayClick} />
+      <MonthlyCalendar key={refreshKey} onDayClick={handleDayClick} />
 
       {/* Day View Modal */}
       {showDayModal && selectedDate && (
@@ -161,7 +191,16 @@ export default function SchedulePage() {
                       />
                     </svg>
                   </div>
-                  <p className="text-gray-600">No bookings for this day</p>
+                  <p className="text-gray-600 mb-4">No bookings for this day</p>
+                  <button
+                    onClick={handleCreateBooking}
+                    className="px-4 py-2 bg-[#903838] text-white rounded-lg hover:bg-[#7d2f2f] transition-colors font-medium inline-flex items-center gap-2"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Create Booking
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -198,6 +237,13 @@ export default function SchedulePage() {
                                     : "Individual"}
                                 </span>
                               </div>
+
+                              {/* Show area if it's a pitch/ball wall booking */}
+                              {booking.area && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Area: {booking.area}
+                                </div>
+                              )}
                             </div>
 
                             <span
@@ -210,8 +256,13 @@ export default function SchedulePage() {
                           </div>
 
                           {/* Additional details if available */}
+                          {booking.title && (
+                            <div className="text-sm text-gray-700 mt-2 font-medium">
+                              {booking.title}
+                            </div>
+                          )}
                           {booking.creator_name && (
-                            <div className="text-xs text-gray-500 mt-2">
+                            <div className="text-xs text-gray-500 mt-1">
                               Created by: {booking.creator_name}
                             </div>
                           )}
@@ -223,16 +274,34 @@ export default function SchedulePage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-6 border-t border-gray-200 bg-gray-50">
+            <div className="p-6 border-t border-gray-200 bg-gray-50 flex gap-3">
+              <button
+                onClick={handleCreateBooking}
+                className="flex-1 px-4 py-2 bg-[#903838] text-white rounded-lg hover:bg-[#7d2f2f] transition-colors font-medium flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Create Booking
+              </button>
               <button
                 onClick={() => setShowDayModal(false)}
-                className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
               >
                 Close
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Create Booking Modal */}
+      {showCreateModal && (
+        <CreateBookingModal
+          selectedDate={selectedDate || new Date()}
+          onClose={() => setShowCreateModal(false)}
+          onSuccess={handleBookingCreated}
+        />
       )}
     </div>
   );

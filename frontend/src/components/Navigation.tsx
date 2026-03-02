@@ -323,6 +323,16 @@ export default function Navigation() {
                     My Bookings
                   </Link>
 
+                  {/* Schedule */}
+                  <Link
+                    href="/dashboard/schedule"
+                    role="menuitem"
+                    className="block px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                    onClick={() => setIsUserOpenDesktop(false)}
+                  >
+                    Schedule
+                  </Link>
+
                   {/* User settings (this is the item you asked to navigate) */}
                   <Link
                     href="/dashboard/settings"
@@ -484,6 +494,15 @@ export default function Navigation() {
                   className="block px-3 py-2 rounded-md text-base text-white hover:text-gray-100 hover:bg-white/10"
                 >
                   My Bookings
+                </Link>
+
+                {/* Schedule */}
+                <Link
+                  href="/dashboard/schedule"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="block px-3 py-2 rounded-md text-base text-white hover:text-gray-100 hover:bg-white/10"
+                >
+                  Schedule
                 </Link>
 
                 {/* User settings  ← This navigates to the User Settings page */}

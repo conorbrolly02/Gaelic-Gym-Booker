@@ -1,9 +1,10 @@
 import PitchBookingBase from "@/components/PitchBookingBase";
+import { PITCH_IDS } from "@/constants/pitches";
 
 export default function MainPitchPage() {
   return (
     <PitchBookingBase
-      pitchId="1"
+      pitchId={PITCH_IDS.MAIN}
       pitchName="Main Pitch"
     />
   );

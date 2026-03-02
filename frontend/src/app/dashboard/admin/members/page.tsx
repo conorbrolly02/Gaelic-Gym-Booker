@@ -61,7 +61,7 @@ export default function AdminMembersPage() {
       if (filter !== "all") {
         params.status = filter;
       }
-      
+
       const data = await adminApi.getMembers(params);
       setMembers(data);
     } catch (err: any) {

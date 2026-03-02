@@ -4,7 +4,7 @@ Pydantic schemas for pitch booking endpoints.
 Defines request/response models for pitch resources and pitch bookings.
 """
 
-from datetime import datetime
+from datetime import datetime, date, time
 from typing import Literal, List, Optional
 from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, ConfigDict
@@ -213,3 +213,84 @@ class PitchBookingOut(BaseModel):
             member_id=booking.member_id,
             status=booking.status.value
         )
+
+
+# ============================================================
+# RECURRING PITCH BOOKING SCHEMAS
+# ============================================================
+
+class RecurringPitchBookingIn(BaseModel):
+    """
+    Request body for creating a recurring pitch booking pattern.
+
+    Attributes:
+        pitch_id: UUID of the pitch to book
+        pattern_type: "daily" or "weekly"
+        days_of_week: List of day numbers (0=Sunday, 6=Saturday) for weekly
+        start_time: Time of day for each booking
+        duration_mins: Duration of each booking in minutes
+        valid_from: First date for the pattern
+        valid_until: Last date for the pattern
+        title: Booking title
+        requester_name: Name of requester
+        team_name: Optional team name
+        notes: Optional notes
+        area: Pitch area to book
+        booking_type: SINGLE or TEAM
+        party_size: Number of people (1-20)
+    """
+    pitch_id: UUID
+    pattern_type: Literal["daily", "weekly"]
+    days_of_week: List[int] = Field(default_factory=list, description="Days for weekly pattern (0=Sunday, 6=Saturday)")
+    start_time: time = Field(..., description="Time of day for bookings")
+    duration_mins: int = Field(..., gt=0, le=480, description="Duration in minutes (max 8 hours)")
+    valid_from: date = Field(..., description="First date for pattern")
+    valid_until: date = Field(..., description="Last date for pattern")
+    title: str = Field(..., min_length=3, description="Booking title")
+    requester_name: str = Field(..., min_length=2, description="Requester name")
+    team_name: Optional[str] = None
+    notes: Optional[str] = None
+    area: AreaSelection = Field(default="whole", description="Area of pitch to book")
+    booking_type: Literal["SINGLE", "TEAM"] = Field(default="SINGLE")
+    party_size: int = Field(default=1, ge=1, le=20)
+
+    @field_validator('pattern_type')
+    @classmethod
+    def validate_pattern_type(cls, v):
+        """Ensure pattern_type is valid."""
+        if v not in ["daily", "weekly"]:
+            raise ValueError("pattern_type must be 'daily' or 'weekly'")
+        return v
+
+    @field_validator('days_of_week')
+    @classmethod
+    def validate_days_of_week(cls, v, info):
+        """Validate days_of_week values."""
+        pattern_type = info.data.get('pattern_type')
+        if pattern_type == 'weekly' and len(v) == 0:
+            raise ValueError("days_of_week required for weekly patterns")
+        for day in v:
+            if day < 0 or day > 6:
+                raise ValueError("days_of_week values must be 0-6")
+        return v
+
+    @field_validator('valid_until')
+    @classmethod
+    def validate_date_range(cls, valid_until, info):
+        """Ensure valid_until is after valid_from."""
+        valid_from = info.data.get('valid_from')
+        if valid_from and valid_until < valid_from:
+            raise ValueError("valid_until must be after valid_from")
+        return valid_until
+
+
+class RecurringPitchBookingOut(BaseModel):
+    """
+    Response for creating a recurring pitch booking pattern.
+
+    Attributes:
+        bookings_created: Number of bookings successfully created
+        conflicts_skipped: Number of bookings skipped due to conflicts
+    """
+    bookings_created: int
+    conflicts_skipped: int

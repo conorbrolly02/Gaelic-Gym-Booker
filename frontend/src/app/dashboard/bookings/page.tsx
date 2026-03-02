@@ -44,14 +44,14 @@ export default function MyBookingsPage() {
 
     try {
       let params: { upcoming?: boolean; status?: string } = {};
-      
+
       if (filter === "upcoming") {
         params.upcoming = true;
       }
       // For "past" and "all", we fetch all and filter client-side
-      
+
       const data = await bookingApi.getBookings(params);
-      
+
       // Filter past bookings client-side
       if (filter === "past") {
         const now = new Date();

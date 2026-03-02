@@ -25,7 +25,9 @@ from app.schemas.pitch import (
     PitchAvailabilityOut,
     PitchBookingIn,
     PitchBookingOut,
-    AvailabilitySlotOut
+    AvailabilitySlotOut,
+    RecurringPitchBookingIn,
+    RecurringPitchBookingOut
 )
 from app.services.pitch_booking import PitchBookingService
 from app.config import settings
@@ -255,3 +257,105 @@ async def admin_create_pitch_booking(
         )
 
     return PitchBookingOut.from_booking(booking)
+
+
+# ============================================================
+# RECURRING PITCH BOOKINGS
+# ============================================================
+
+@router.post(
+    "/bookings/recurring",
+    response_model=RecurringPitchBookingOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create recurring pitch booking"
+)
+async def create_recurring_pitch_booking(
+    booking_data: RecurringPitchBookingIn,
+    db: AsyncSession = Depends(get_db),
+    member: Member = Depends(get_current_member)
+):
+    """
+    Create a recurring pitch booking pattern.
+
+    Generates multiple bookings based on the pattern:
+    - Daily: Creates bookings for each day in the date range
+    - Weekly: Creates bookings for specified days of the week
+
+    Returns:
+    - bookings_created: Number of successful bookings
+    - conflicts_skipped: Number of bookings skipped due to conflicts
+
+    Note: Bookings that conflict with existing bookings are skipped,
+    not rejected. This allows partial pattern creation.
+    """
+    from datetime import timedelta, datetime, timezone as tz
+
+    # Verify pitch exists
+    result = await db.execute(
+        select(Resource)
+        .where(Resource.id == booking_data.pitch_id)
+        .where(Resource.is_active == True)
+    )
+    pitch = result.scalar_one_or_none()
+    if not pitch:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pitch {booking_data.pitch_id} not found"
+        )
+
+    service = PitchBookingService(db)
+    bookings_created = 0
+    conflicts_skipped = 0
+
+    # Generate dates based on pattern
+    current_date = booking_data.valid_from
+    while current_date <= booking_data.valid_until:
+        # Check if this date should have a booking
+        should_book = False
+        if booking_data.pattern_type == "daily":
+            should_book = True
+        elif booking_data.pattern_type == "weekly":
+            # 0=Sunday, 1=Monday, ..., 6=Saturday
+            day_of_week = (current_date.weekday() + 1) % 7  # Convert Python's 0=Monday to 0=Sunday
+            should_book = day_of_week in booking_data.days_of_week
+
+        if should_book:
+            # Create booking for this date
+            start_datetime = datetime.combine(current_date, booking_data.start_time)
+            # Make timezone aware (UTC)
+            start_datetime = start_datetime.replace(tzinfo=tz.utc)
+            end_datetime = start_datetime + timedelta(minutes=booking_data.duration_mins)
+
+            # Create booking data
+            pitch_booking_data = PitchBookingIn(
+                pitch_id=booking_data.pitch_id,
+                start=start_datetime,
+                end=end_datetime,
+                title=booking_data.title,
+                requester_name=booking_data.requester_name,
+                team_name=booking_data.team_name,
+                notes=booking_data.notes,
+                area=booking_data.area,
+                booking_type=booking_data.booking_type,
+                party_size=booking_data.party_size
+            )
+
+            try:
+                await service.create_pitch_booking(
+                    data=pitch_booking_data,
+                    created_by_user_id=member.user_id,
+                    member_id_override=member.id
+                )
+                bookings_created += 1
+            except ValueError:
+                # Conflict detected, skip this booking
+                conflicts_skipped += 1
+
+        current_date += timedelta(days=1)
+
+    await db.commit()
+
+    return RecurringPitchBookingOut(
+        bookings_created=bookings_created,
+        conflicts_skipped=conflicts_skipped
+    )

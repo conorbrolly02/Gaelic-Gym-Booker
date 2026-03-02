@@ -68,7 +68,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * Check current authentication status
    * Called on mount to restore session from cookies
    */
-  const checkAuth = useCallback(async () => {
+  const checkAuth = async () => {
     try {
       const data = await authApi.getCurrentUser();
       if (data) {
@@ -85,7 +85,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  };
 
   /**
    * Login with credentials
@@ -119,13 +119,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * Useful after profile updates
    */
   const refreshUser = useCallback(async () => {
-    await checkAuth();
-  }, [checkAuth]);
+    try {
+      const data = await authApi.getCurrentUser();
+      if (data) {
+        setUser(data.user);
+        setMember(data.member);
+      }
+    } catch (error) {
+      console.error("Refresh user error:", error);
+    }
+  }, []);
 
-  // Check authentication on mount
+  // Check authentication on mount - only once
   useEffect(() => {
     checkAuth();
-  }, [checkAuth]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Compute derived state
   const isAuthenticated = user !== null;

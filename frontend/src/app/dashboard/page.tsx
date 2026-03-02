@@ -24,7 +24,7 @@
  *      b) add a `/api/bookings/me?range=past` route.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { bookingApi } from "@/lib/api";
@@ -46,55 +46,49 @@ export default function DashboardPage() {
   // Active tab: "upcoming" or "past"
   const [activeTab, setActiveTab] = useState<"upcoming" | "past">("upcoming");
 
-  // Keep "now" fresh so items move between panels automatically if user sits on the page
-  const [now, setNow] = useState<Date>(new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-
   // ------------------------------- DATA FETCH --------------------------------
-  useEffect(() => {
-    // Fetch UPCOMING
-    (async () => {
-      try {
-        setLoadingUpcoming(true);
-        setErrorUpcoming(null);
-        const data = await bookingApi.getBookings({ upcoming: true });
-        // Sort: soonest first by start_time
-        const sorted = [...(data ?? [])].sort(
-          (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-        );
-        setUpcoming(sorted);
-      } catch (err: any) {
-        setErrorUpcoming(err?.message ?? "Failed to load upcoming bookings");
-      } finally {
-        setLoadingUpcoming(false);
-      }
-    })();
-
-    // Fetch PAST
-    (async () => {
-      try {
-        setLoadingPast(true);
-        setErrorPast(null);
-        // Ensure your API supports this; otherwise switch to an "all mine" fetch and filter below.
-        const data = await bookingApi.getBookings({ past: true });
-        // Sort: most recent past first by start_time
-        const sorted = [...(data ?? [])]
-          .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
-          .reverse();
-        setPast(sorted);
-      } catch (err: any) {
-        setErrorPast(
-          err?.message ??
-            "Failed to load past bookings. (If your API doesn't support { past: true }, expose one or fetch all and filter by end_time < now.)"
-        );
-      } finally {
-        setLoadingPast(false);
-      }
-    })();
+  const fetchUpcoming = useCallback(async () => {
+    try {
+      setLoadingUpcoming(true);
+      setErrorUpcoming(null);
+      const data = await bookingApi.getBookings({ upcoming: true });
+      // Sort: soonest first by start_time
+      const sorted = [...(data ?? [])].sort(
+        (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+      );
+      setUpcoming(sorted);
+    } catch (err: any) {
+      setErrorUpcoming(err?.message ?? "Failed to load upcoming bookings");
+    } finally {
+      setLoadingUpcoming(false);
+    }
   }, []);
+
+  const fetchPast = useCallback(async () => {
+    try {
+      setLoadingPast(true);
+      setErrorPast(null);
+      // Ensure your API supports this; otherwise switch to an "all mine" fetch and filter below.
+      const data = await bookingApi.getBookings({ past: true });
+      // Sort: most recent past first by start_time
+      const sorted = [...(data ?? [])]
+        .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+        .reverse();
+      setPast(sorted);
+    } catch (err: any) {
+      setErrorPast(
+        err?.message ??
+          "Failed to load past bookings. (If your API doesn't support { past: true }, expose one or fetch all and filter by end_time < now.)"
+      );
+    } finally {
+      setLoadingPast(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUpcoming();
+    fetchPast();
+  }, [fetchUpcoming, fetchPast]);
 
   // ------------------------------- HELPERS -----------------------------------
   /** Format date/time nicely (IE locale) */
@@ -128,14 +122,14 @@ export default function DashboardPage() {
     return "Good evening";
   };
 
-  /** Client-side safeguards: only include true upcoming/past based on end_time vs "now" */
+  /** Client-side safeguards: only include true upcoming/past based on end_time vs current time */
   const filteredUpcoming = useMemo(
-    () => (upcoming ?? []).filter(b => new Date(b.end_time).getTime() >= now.getTime()),
-    [upcoming, now]
+    () => (upcoming ?? []).filter(b => new Date(b.end_time).getTime() >= Date.now()),
+    [upcoming]
   );
   const filteredPast = useMemo(
-    () => (past ?? []).filter(b => new Date(b.end_time).getTime() < now.getTime()),
-    [past, now]
+    () => (past ?? []).filter(b => new Date(b.end_time).getTime() < Date.now()),
+    [past]
   );
 
   // ------------------------------ MOBILE SWIPE -------------------------------
@@ -244,12 +238,12 @@ export default function DashboardPage() {
 
         {/* View Schedule */}
         <Link
-          href="/dashboard/book"
+          href="/dashboard/schedule"
           className="card hover:shadow-md transition-shadow flex flex-col items-center text-center p-4"
         >
           <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-3">
             <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           </div>
           <span className="text-sm font-medium text-gray-900">View Schedule</span>
