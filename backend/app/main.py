@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from app.database import init_db
 from app.routers import auth_router, members_router, bookings_router, admin_router
 from app.routers.pitches import router as pitches_router
+from app.routers.clubhouse import router as clubhouse_router
 
 
 @asynccontextmanager
@@ -103,6 +104,7 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(members_router, prefix="/api/v1")
 app.include_router(bookings_router, prefix="/api/v1")
 app.include_router(pitches_router, prefix="/api/v1")
+app.include_router(clubhouse_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 
 

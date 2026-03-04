@@ -147,23 +147,65 @@ async def seed_resources():
         db.add_all([bw_full, bw_half_a, bw_half_b])
 
         # ---------------------------
-        # COMMITTEE ROOMS
+        # CLUBHOUSE ROOMS
         # ---------------------------
-        room_a = Resource(
-            name="Committee Room A",
+        committee_room = Resource(
+            name="Committee Room",
             type=ResourceType.ROOM,
-            capacity=12,
+            capacity=20,
             buffer_mins=15,
         )
 
-        room_b = Resource(
-            name="Committee Room B",
+        kitchen = Resource(
+            name="Kitchen",
+            type=ResourceType.ROOM,
+            capacity=10,
+            buffer_mins=15,
+        )
+
+        cr1 = Resource(
+            name="Changing Room 1",
+            type=ResourceType.ROOM,
+            capacity=15,
+            buffer_mins=15,
+        )
+
+        cr2 = Resource(
+            name="Changing Room 2",
+            type=ResourceType.ROOM,
+            capacity=15,
+            buffer_mins=15,
+        )
+
+        cr3 = Resource(
+            name="Changing Room 3",
+            type=ResourceType.ROOM,
+            capacity=15,
+            buffer_mins=15,
+        )
+
+        cr4 = Resource(
+            name="Changing Room 4",
+            type=ResourceType.ROOM,
+            capacity=15,
+            buffer_mins=15,
+        )
+
+        ref_cr = Resource(
+            name="Referee Changing Room",
             type=ResourceType.ROOM,
             capacity=8,
             buffer_mins=15,
         )
 
-        db.add_all([room_a, room_b])
+        room2 = Resource(
+            name="Room 2",
+            type=ResourceType.ROOM,
+            capacity=10,
+            buffer_mins=15,
+        )
+
+        db.add_all([committee_room, kitchen, cr1, cr2, cr3, cr4, ref_cr, room2])
 
         # ---------------------------
         # COMMIT & DONE

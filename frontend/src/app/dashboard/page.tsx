@@ -26,14 +26,16 @@
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { bookingApi } from "@/lib/api";
+import { bookingApi, pitchApi, clubhouseApi } from "@/lib/api";
 import { Booking } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import Alert from "@/components/Alert";
 
 export default function DashboardPage() {
-  const { member, isAdmin } = useAuth();
+  const { member, isAdmin, isCoach } = useAuth();
+  const router = useRouter();
 
   // -------------------------------- STATE -----------------------------------
   const [upcoming, setUpcoming] = useState<Booking[]>([]);
@@ -46,14 +48,34 @@ export default function DashboardPage() {
   // Active tab: "upcoming" or "past"
   const [activeTab, setActiveTab] = useState<"upcoming" | "past">("upcoming");
 
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [facilityFilter, setFacilityFilter] = useState<string>("all");
+
+  // Facility selection modal
+  const [showFacilityModal, setShowFacilityModal] = useState(false);
+
   // ------------------------------- DATA FETCH --------------------------------
   const fetchUpcoming = useCallback(async () => {
     try {
       setLoadingUpcoming(true);
       setErrorUpcoming(null);
-      const data = await bookingApi.getBookings({ upcoming: true });
+
+      // Fetch all types of bookings: gym, pitch, and clubhouse
+      const [gymBookings, pitchBookings, clubhouseBookings] = await Promise.all([
+        bookingApi.getBookings({}).catch(() => []),
+        pitchApi.getMemberPitchBookings({ upcoming: true }).catch(() => []),
+        clubhouseApi.getMemberBookings({ upcoming_only: true }).catch(() => []),
+      ]);
+
+      // Combine all bookings
+      const allBookings = [...gymBookings, ...pitchBookings, ...clubhouseBookings];
+
+      // Filter for upcoming only (end_time >= now)
+      const upcoming = allBookings.filter(b => new Date(b.end_time).getTime() >= Date.now());
+
       // Sort: soonest first by start_time
-      const sorted = [...(data ?? [])].sort(
+      const sorted = upcoming.sort(
         (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
       );
       setUpcoming(sorted);
@@ -68,18 +90,27 @@ export default function DashboardPage() {
     try {
       setLoadingPast(true);
       setErrorPast(null);
-      // Ensure your API supports this; otherwise switch to an "all mine" fetch and filter below.
-      const data = await bookingApi.getBookings({ past: true });
+
+      // Fetch all types of bookings: gym, pitch, and clubhouse
+      const [gymBookings, pitchBookings, clubhouseBookings] = await Promise.all([
+        bookingApi.getBookings({}).catch(() => []),
+        pitchApi.getMemberPitchBookings({ past: true }).catch(() => []),
+        clubhouseApi.getMemberBookings({}).catch(() => []),
+      ]);
+
+      // Combine all bookings
+      const allBookings = [...gymBookings, ...pitchBookings, ...clubhouseBookings];
+
+      // Filter for past only (end_time < now)
+      const past = allBookings.filter(b => new Date(b.end_time).getTime() < Date.now());
+
       // Sort: most recent past first by start_time
-      const sorted = [...(data ?? [])]
+      const sorted = past
         .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
         .reverse();
       setPast(sorted);
     } catch (err: any) {
-      setErrorPast(
-        err?.message ??
-          "Failed to load past bookings. (If your API doesn't support { past: true }, expose one or fetch all and filter by end_time < now.)"
-      );
+      setErrorPast(err?.message ?? "Failed to load past bookings");
     } finally {
       setLoadingPast(false);
     }
@@ -91,7 +122,7 @@ export default function DashboardPage() {
   }, [fetchUpcoming, fetchPast]);
 
   // ------------------------------- HELPERS -----------------------------------
-  /** Format date/time nicely (IE locale) */
+  /** Format date/time nicely (IE locale) with month and year */
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
     return {
@@ -99,6 +130,7 @@ export default function DashboardPage() {
         weekday: "short",
         month: "short",
         day: "numeric",
+        year: "numeric",
       }),
       time: date.toLocaleTimeString("en-IE", {
         hour: "2-digit",
@@ -141,14 +173,47 @@ export default function DashboardPage() {
     return "bg-gray-100 text-gray-800 border border-gray-200";
   };
 
+  /** Get unique facility types from bookings */
+  const facilityTypes = useMemo(() => {
+    const allBookings = [...upcoming, ...past];
+    const types = new Set(allBookings.map(b => b.resource_name?.toLowerCase() || "unknown"));
+    return Array.from(types).sort();
+  }, [upcoming, past]);
+
+  /** Apply search and filter */
+  const applyFilters = (bookings: Booking[]) => {
+    let filtered = bookings;
+
+    // Apply search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(b =>
+        b.resource_name?.toLowerCase().includes(query) ||
+        b.team_name?.toLowerCase().includes(query) ||
+        b.requester_name?.toLowerCase().includes(query) ||
+        b.title?.toLowerCase().includes(query) ||
+        formatDateTime(b.start_time).date.toLowerCase().includes(query)
+      );
+    }
+
+    // Apply facility filter
+    if (facilityFilter !== "all") {
+      filtered = filtered.filter(b =>
+        b.resource_name?.toLowerCase() === facilityFilter.toLowerCase()
+      );
+    }
+
+    return filtered;
+  };
+
   /** Client-side safeguards: only include true upcoming/past based on end_time vs current time */
   const filteredUpcoming = useMemo(
-    () => (upcoming ?? []).filter(b => new Date(b.end_time).getTime() >= Date.now()),
-    [upcoming]
+    () => applyFilters((upcoming ?? []).filter(b => new Date(b.end_time).getTime() >= Date.now())),
+    [upcoming, searchQuery, facilityFilter]
   );
   const filteredPast = useMemo(
-    () => (past ?? []).filter(b => new Date(b.end_time).getTime() < Date.now()),
-    [past]
+    () => applyFilters((past ?? []).filter(b => new Date(b.end_time).getTime() < Date.now())),
+    [past, searchQuery, facilityFilter]
   );
 
   // ------------------------------ MOBILE SWIPE -------------------------------
@@ -175,6 +240,13 @@ export default function DashboardPage() {
     const { date, time } = formatDateTime(booking.start_time);
     const endTime = formatDateTime(booking.end_time).time;
     const today = isToday(booking.start_time);
+
+    // Parse the full date string (e.g., "Mon, Jan 15, 2026")
+    const dateParts = date.split(", ");
+    const weekday = dateParts[0]; // "Mon"
+    const monthDay = dateParts[1]; // "Jan 15"
+    const year = dateParts[2]; // "2026"
+
     return (
       <div
         key={booking.id}
@@ -182,10 +254,11 @@ export default function DashboardPage() {
           today ? "border-primary-200 bg-primary-50" : "border-gray-200 bg-gray-50"
         }`}
       >
-        {/* Date indicator (weekday + day) */}
-        <div className={`text-center min-w-[60px] ${today ? "text-primary-700" : "text-gray-600"}`}>
-          <div className="text-xs font-medium uppercase">{date.split(",")[0]}</div>
-          <div className="text-lg font-bold">{date.split(" ")[1]}</div>
+        {/* Date indicator with month and day */}
+        <div className={`text-center min-w-[70px] ${today ? "text-primary-700" : "text-gray-600"}`}>
+          <div className="text-xs font-medium uppercase">{weekday}</div>
+          <div className="text-sm font-semibold">{monthDay}</div>
+          <div className="text-xs text-gray-500">{year}</div>
         </div>
 
         {/* Divider */}
@@ -242,8 +315,8 @@ export default function DashboardPage() {
       {/* ----------------------------- QUICK ACTIONS ---------------------------- */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {/* Book Slot */}
-        <Link
-          href="/dashboard/book"
+        <button
+          onClick={() => setShowFacilityModal(true)}
           className="card hover:shadow-md transition-shadow flex flex-col items-center text-center p-4"
         >
           <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center mb-3">
@@ -252,7 +325,7 @@ export default function DashboardPage() {
             </svg>
           </div>
           <span className="text-sm font-medium text-gray-900">Book Slot</span>
-        </Link>
+        </button>
 
         {/* My Bookings (kept as a quick action) */}
         <Link
@@ -314,17 +387,115 @@ export default function DashboardPage() {
       {/* ---------------------------- BOOKINGS TABS ----------------------------- */}
       <section aria-labelledby="bookings-section-title" className="card p-0 overflow-hidden">
         {/* Tabs header */}
-        <div className="flex items-center justify-between px-4 pt-4">
-          <div>
-            <h2 id="bookings-section-title" className="text-lg font-semibold text-gray-900">
-              Your Bookings
-            </h2>
-            <p className="text-sm text-gray-500">Upcoming sessions and booking history.</p>
+        <div className="px-4 pt-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 id="bookings-section-title" className="text-lg font-semibold text-gray-900">
+                Your Bookings
+              </h2>
+              <p className="text-sm text-gray-500">Upcoming sessions and booking history.</p>
+            </div>
+            {/* "View all" goes to the full bookings page */}
+            <Link href="/dashboard/bookings" className="text-sm text-primary-600 hover:text-primary-700 font-medium">
+              View all
+            </Link>
           </div>
-          {/* "View all" goes to the full bookings page */}
-          <Link href="/dashboard/bookings" className="text-sm text-primary-600 hover:text-primary-700 font-medium">
-            View all
-          </Link>
+
+          {/* Search and Filter Controls */}
+          <div className="space-y-3 mb-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              {/* Search Bar */}
+              <div className="flex-1 relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search by facility, team, requester, or date..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                    aria-label="Clear search"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              {/* Facility Filter */}
+              <div className="sm:w-48">
+                <select
+                  value={facilityFilter}
+                  onChange={(e) => setFacilityFilter(e.target.value)}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="all">All Facilities</option>
+                  {facilityTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Clear Filters Button */}
+              {(searchQuery || facilityFilter !== "all") && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setFacilityFilter("all");
+                  }}
+                  className="sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Clear Filters
+                </button>
+              )}
+            </div>
+
+            {/* Active Filters Display */}
+            {(searchQuery || facilityFilter !== "all") && (
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <span>Active filters:</span>
+                {searchQuery && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-md">
+                    Search: "{searchQuery}"
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="text-gray-500 hover:text-gray-700"
+                      aria-label="Remove search filter"
+                    >
+                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                )}
+                {facilityFilter !== "all" && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-md">
+                    Facility: {facilityFilter.charAt(0).toUpperCase() + facilityFilter.slice(1)}
+                    <button
+                      onClick={() => setFacilityFilter("all")}
+                      className="text-gray-500 hover:text-gray-700"
+                      aria-label="Remove facility filter"
+                    >
+                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Tab buttons (accessible) */}
@@ -407,16 +578,37 @@ export default function DashboardPage() {
                 <div className="text-center py-8">
                   <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mx-auto mb-3">
                     <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      {searchQuery || facilityFilter !== "all" ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      )}
                     </svg>
                   </div>
-                  <p className="text-gray-600 mb-4">No upcoming bookings</p>
-                  <Link
-                    href="/dashboard/book"
-                    className="inline-block px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
-                  >
-                    Book a Slot
-                  </Link>
+                  {searchQuery || facilityFilter !== "all" ? (
+                    <>
+                      <p className="text-gray-600 mb-4">No bookings match your filters</p>
+                      <button
+                        onClick={() => {
+                          setSearchQuery("");
+                          setFacilityFilter("all");
+                        }}
+                        className="inline-block px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+                      >
+                        Clear Filters
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-gray-600 mb-4">No upcoming bookings</p>
+                      <Link
+                        href="/dashboard/book"
+                        className="inline-block px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+                      >
+                        Book a Slot
+                      </Link>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -445,7 +637,29 @@ export default function DashboardPage() {
                   <Alert type="error" message={errorPast} onClose={() => setErrorPast(null)} />
                 </div>
               ) : filteredPast.length === 0 ? (
-                <div className="text-sm text-gray-700 py-8 text-center">No past bookings found.</div>
+                <div className="text-center py-8">
+                  {searchQuery || facilityFilter !== "all" ? (
+                    <>
+                      <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mx-auto mb-3">
+                        <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </div>
+                      <p className="text-gray-600 mb-4">No bookings match your filters</p>
+                      <button
+                        onClick={() => {
+                          setSearchQuery("");
+                          setFacilityFilter("all");
+                        }}
+                        className="inline-block px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+                      >
+                        Clear Filters
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-700">No past bookings found.</p>
+                  )}
+                </div>
               ) : (
                 <div className="space-y-3">
                   {filteredPast.map((b) => (
@@ -457,6 +671,110 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {/* ------------------------ FACILITY SELECTION MODAL ----------------------- */}
+      {showFacilityModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-semibold text-gray-900">Choose Facility to Book</h3>
+                <button
+                  onClick={() => setShowFacilityModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Close modal"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-3">
+              {/* Gym */}
+              <button
+                onClick={() => {
+                  setShowFacilityModal(false);
+                  router.push("/dashboard/book");
+                }}
+                className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all group"
+              >
+                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                  <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  </svg>
+                </div>
+                <div className="flex-1 text-left">
+                  <h4 className="font-semibold text-gray-900">Gym</h4>
+                  <p className="text-sm text-gray-600">Book a gym time slot</p>
+                </div>
+                <svg className="w-5 h-5 text-gray-400 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+
+              {/* Pitches - Only for Coaches and Admins */}
+              {(isCoach || isAdmin) && (
+                <button
+                  onClick={() => {
+                    setShowFacilityModal(false);
+                    router.push("/dashboard/pitches");
+                  }}
+                  className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all group"
+                >
+                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 text-left">
+                    <h4 className="font-semibold text-gray-900">Pitches & Ball Wall</h4>
+                    <p className="text-sm text-gray-600">Book pitch or ball wall time</p>
+                  </div>
+                  <svg className="w-5 h-5 text-gray-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
+
+              {/* Clubhouse */}
+              <button
+                onClick={() => {
+                  setShowFacilityModal(false);
+                  router.push("/dashboard/clubhouse");
+                }}
+                className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all group"
+              >
+                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center group-hover:bg-purple-200 transition-colors">
+                  <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                </div>
+                <div className="flex-1 text-left">
+                  <h4 className="font-semibold text-gray-900">Clubhouse Rooms</h4>
+                  <p className="text-sm text-gray-600">Book committee room, changing rooms, kitchen</p>
+                </div>
+                <svg className="w-5 h-5 text-gray-400 group-hover:text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
+              <button
+                onClick={() => setShowFacilityModal(false)}
+                className="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
