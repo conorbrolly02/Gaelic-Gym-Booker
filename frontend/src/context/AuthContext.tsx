@@ -32,6 +32,10 @@ interface AuthContextType {
   isAuthenticated: boolean;
   // True if user is an admin
   isAdmin: boolean;
+  // True if user is a coach
+  isCoach: boolean;
+  // True if user is a regular member
+  isMember: boolean;
   // Login function - throws on failure
   login: (credentials: LoginCredentials) => Promise<void>;
   // Logout function
@@ -139,6 +143,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Compute derived state
   const isAuthenticated = user !== null;
   const isAdmin = user?.role === "ADMIN";
+  const isCoach = user?.role === "COACH";
+  const isMember = user?.role === "MEMBER";
 
   // Context value
   const value: AuthContextType = {
@@ -147,6 +153,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     isLoading,
     isAuthenticated,
     isAdmin,
+    isCoach,
+    isMember,
     login,
     logout,
     refreshUser,

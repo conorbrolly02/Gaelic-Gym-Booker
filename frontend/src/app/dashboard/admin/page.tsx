@@ -19,6 +19,7 @@ import { adminApi } from "@/lib/api";
 import { AdminStats } from "@/types";
 import Alert from "@/components/Alert";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import ApprovalsModal from "@/components/ApprovalsModal";
 
 export default function AdminDashboardPage() {
   const { isAdmin, isLoading: authLoading } = useAuth();
@@ -26,10 +27,11 @@ export default function AdminDashboardPage() {
 
   // Stats data
   const [stats, setStats] = useState<AdminStats | null>(null);
-  
+
   // UI state
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showApprovalsModal, setShowApprovalsModal] = useState(false);
 
   // Redirect non-admins (only after auth check completes)
   useEffect(() => {
@@ -40,21 +42,26 @@ export default function AdminDashboardPage() {
 
   // Fetch stats on mount
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const data = await adminApi.getStats();
-        setStats(data);
-      } catch (err: any) {
-        setError(err.message || "Failed to load statistics");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     if (isAdmin) {
       fetchStats();
     }
   }, [isAdmin]);
+
+  const fetchStats = async () => {
+    try {
+      const data = await adminApi.getStats();
+      setStats(data);
+    } catch (err: any) {
+      setError(err.message || "Failed to load statistics");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleApprovalComplete = () => {
+    // Refresh stats after approval
+    fetchStats();
+  };
 
   // Don't render for non-admins
   if (!isAdmin) {
@@ -102,7 +109,10 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Pending Approvals */}
-            <div className="card">
+            <button
+              onClick={() => setShowApprovalsModal(true)}
+              className="card hover:shadow-lg hover:bg-gray-50 transition-all cursor-pointer text-left"
+            >
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
                   <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -110,11 +120,16 @@ export default function AdminDashboardPage() {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Pending Approval</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.pending_members}</p>
+                  <p className="text-sm text-gray-500">Pending Approvals</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.pending_approvals}</p>
+                  {stats.pending_approvals > 0 && (
+                    <p className="text-xs text-yellow-600 mt-1">
+                      {stats.pending_members} members, {stats.pending_bookings} bookings
+                    </p>
+                  )}
                 </div>
               </div>
-            </div>
+            </button>
 
             {/* Active Members */}
             <div className="card">
@@ -148,10 +163,10 @@ export default function AdminDashboardPage() {
           </div>
 
           {/* Pending Approvals Alert */}
-          {stats.pending_members > 0 && (
+          {stats.pending_approvals > 0 && (
             <Alert
               type="warning"
-              message={`You have ${stats.pending_members} member${stats.pending_members > 1 ? "s" : ""} waiting for approval.`}
+              message={`You have ${stats.pending_approvals} pending approval${stats.pending_approvals > 1 ? "s" : ""} (${stats.pending_members} member${stats.pending_members !== 1 ? "s" : ""}, ${stats.pending_bookings} booking${stats.pending_bookings !== 1 ? "s" : ""}).`}
             />
           )}
 
@@ -199,6 +214,13 @@ export default function AdminDashboardPage() {
           </div>
         </>
       )}
+
+      {/* Approvals Modal */}
+      <ApprovalsModal
+        isOpen={showApprovalsModal}
+        onClose={() => setShowApprovalsModal(false)}
+        onApprovalComplete={handleApprovalComplete}
+      />
     </div>
   );
 }

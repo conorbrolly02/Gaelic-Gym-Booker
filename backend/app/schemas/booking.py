@@ -17,6 +17,7 @@ class BookingCreate(BaseModel):
     Request body for creating a single booking.
     Used by POST /bookings.
     """
+    resource_id: Optional[UUID] = None
     start_time: datetime
     end_time: datetime
     booking_type: Literal["SINGLE", "TEAM"] = "SINGLE"
@@ -86,7 +87,7 @@ class BookingResponse(BaseModel):
     resource_id: Optional[UUID] = None        # filled once resources model is live
     start_time: datetime
     end_time: datetime
-    status: Literal["CONFIRMED", "CANCELLED"]
+    status: Literal["PENDING_APPROVAL", "CONFIRMED", "CANCELLED"]
     booking_type: Literal["SINGLE", "TEAM"]
     party_size: int
 

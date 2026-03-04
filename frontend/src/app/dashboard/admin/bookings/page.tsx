@@ -277,6 +277,7 @@ export default function AdminBookingsPage() {
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Time</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Member</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Facility</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Team/Requester</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Type</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Status</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Created By</th>
@@ -300,6 +301,20 @@ export default function AdminBookingsPage() {
                         </td>
                         <td className="py-4 px-4 text-gray-600">
                           {booking.resource_name || "Main Gym"}
+                        </td>
+                        <td className="py-4 px-4 text-gray-600 text-sm">
+                          {booking.team_name ? (
+                            <div>
+                              <div className="font-medium text-gray-900">{booking.team_name}</div>
+                              {booking.requester_name && (
+                                <div className="text-xs text-gray-500">{booking.requester_name}</div>
+                              )}
+                            </div>
+                          ) : booking.requester_name ? (
+                            <div className="text-gray-900">{booking.requester_name}</div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
                         <td className="py-4 px-4 text-gray-600 text-sm">
                           {booking.booking_type === "TEAM"
@@ -347,7 +362,7 @@ export default function AdminBookingsPage() {
                     className="p-4 bg-gray-50 rounded-lg border border-gray-200"
                   >
                     <div className="flex justify-between items-start mb-2">
-                      <div>
+                      <div className="flex-1">
                         <div className="font-medium text-gray-900">
                           {start.time} - {end.time}
                         </div>
@@ -361,6 +376,16 @@ export default function AdminBookingsPage() {
                             ? `Team (${booking.party_size} people)`
                             : "Individual"}
                         </div>
+                        {(booking.team_name || booking.requester_name) && (
+                          <div className="mt-2 text-sm">
+                            {booking.team_name && (
+                              <div className="font-medium text-gray-900">{booking.team_name}</div>
+                            )}
+                            {booking.requester_name && (
+                              <div className="text-gray-600">{booking.requester_name}</div>
+                            )}
+                          </div>
+                        )}
                         <div className="text-xs text-gray-500 mt-1">
                           Created by: {booking.creator_name || "Unknown"}
                         </div>

@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.auth.dependencies import get_current_member, require_admin
+from app.auth.dependencies import get_current_member, require_admin, get_current_active_user
 from app.models.resource import Resource, ResourceType
 from app.models.member import Member
 from app.models.user import User
@@ -169,7 +169,8 @@ async def get_pitch_availability(
 async def create_pitch_booking(
     booking_data: PitchBookingIn,
     db: AsyncSession = Depends(get_db),
-    member: Member = Depends(get_current_member)
+    member: Member = Depends(get_current_member),
+    user: User = Depends(get_current_active_user)
 ):
     """
     Create a new pitch booking with area specification.
@@ -188,6 +189,11 @@ async def create_pitch_booking(
     - Quarters conflict with same quarter, their containing half, and whole
     - Quarters on opposite half do NOT conflict
 
+    Approval rules:
+    - Coaches: Pitch bookings require admin approval (PENDING_APPROVAL status)
+    - Members: Not allowed to book pitches (should not reach this endpoint)
+    - Admins: Bookings are auto-approved (CONFIRMED status)
+
     Returns:
     - 201 Created with booking details on success
     - 409 Conflict if area/time conflicts with existing booking
@@ -199,7 +205,8 @@ async def create_pitch_booking(
         booking = await service.create_pitch_booking(
             data=booking_data,
             created_by_user_id=member.user_id,
-            member_id_override=member.id
+            member_id_override=member.id,
+            user_role=user.role
         )
     except ValueError as e:
         raise HTTPException(
@@ -249,7 +256,8 @@ async def admin_create_pitch_booking(
         booking = await service.create_pitch_booking(
             data=booking_data,
             created_by_user_id=admin.id,
-            member_id_override=booking_data.member_id
+            member_id_override=booking_data.member_id,
+            user_role=admin.role
         )
     except ValueError as e:
         raise HTTPException(
@@ -258,6 +266,63 @@ async def admin_create_pitch_booking(
         )
 
     return PitchBookingOut.from_booking(booking)
+
+
+# ============================================================
+# ALL PITCH/BALL WALL BOOKINGS (SCHEDULE VIEW)
+# ============================================================
+
+@router.get(
+    "/bookings/all",
+    response_model=List[PitchBookingOut],
+    summary="Get all pitch and ball wall bookings (schedule view)"
+)
+async def get_all_pitch_bookings(
+    upcoming: bool = Query(False, description="Only upcoming bookings"),
+    past: bool = Query(False, description="Only past bookings"),
+    db: AsyncSession = Depends(get_db),
+    member: Member = Depends(get_current_member)
+):
+    """
+    Get all pitch and ball wall bookings for schedule view (read-only).
+
+    This endpoint allows any authenticated member to view all pitch and ball wall
+    bookings for calendar/schedule purposes. Members cannot modify bookings through
+    this endpoint - it's read-only for viewing the facility schedule.
+
+    Query parameters:
+    - upcoming: If true, only return future bookings
+    - past: If true, only return past bookings
+    """
+    from app.models.booking import Booking, BookingStatus
+    from sqlalchemy.orm import selectinload
+
+    # Build query with eager loading of resource
+    # Filter for only pitch/ball wall bookings (those with resource_id)
+    query = select(Booking).options(
+        selectinload(Booking.resource),
+        selectinload(Booking.member).selectinload(Member.user)
+    ).where(
+        Booking.status == BookingStatus.CONFIRMED,
+        Booking.resource_id.isnot(None)  # Only resource bookings (pitch/ball wall)
+    )
+
+    # Filter by time
+    now = dt.utcnow()
+    if upcoming:
+        query = query.where(Booking.start_time >= now)
+    elif past:
+        query = query.where(Booking.start_time < now)
+
+    # Order by start time
+    query = query.order_by(Booking.start_time)
+
+    # Execute query
+    result = await db.execute(query)
+    bookings = result.scalars().all()
+
+    # Convert to response format
+    return [PitchBookingOut.from_booking(b) for b in bookings]
 
 
 # ============================================================
@@ -326,7 +391,8 @@ async def get_member_pitch_bookings(
 async def create_recurring_pitch_booking(
     booking_data: RecurringPitchBookingIn,
     db: AsyncSession = Depends(get_db),
-    member: Member = Depends(get_current_member)
+    member: Member = Depends(get_current_member),
+    user: User = Depends(get_current_active_user)
 ):
     """
     Create a recurring pitch booking pattern.
@@ -398,7 +464,8 @@ async def create_recurring_pitch_booking(
                 await service.create_pitch_booking(
                     data=pitch_booking_data,
                     created_by_user_id=member.user_id,
-                    member_id_override=member.id
+                    member_id_override=member.id,
+                    user_role=user.role
                 )
                 bookings_created += 1
             except ValueError:

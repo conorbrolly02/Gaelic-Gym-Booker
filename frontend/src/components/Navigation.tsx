@@ -29,6 +29,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { adminApi } from "@/lib/api";
+import ApprovalsModal from "./ApprovalsModal";
 
 /** Minimal interface for items we link to */
 interface NavLinkItem {
@@ -41,7 +43,7 @@ export default function Navigation() {
   // ---------------------------------------------------------------------------
   // AUTH & ROUTING CONTEXT
   // ---------------------------------------------------------------------------
-  const { user, member, isAdmin, logout } = useAuth();
+  const { user, member, isAdmin, isCoach, isMember, logout } = useAuth();
   const pathname = usePathname();
 
   // Display name for the header (never show email here)
@@ -64,6 +66,37 @@ export default function Navigation() {
   const [isMobileUserOpen, setIsMobileUserOpen] = useState(false);
 
   // ---------------------------------------------------------------------------
+  // APPROVALS MODAL STATE (for admins)
+  // ---------------------------------------------------------------------------
+  const [showApprovalsModal, setShowApprovalsModal] = useState(false);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+
+  // Fetch pending approvals count for admins
+  useEffect(() => {
+    if (isAdmin) {
+      fetchPendingApprovalsCount();
+      // Refresh count every 30 seconds
+      const interval = setInterval(fetchPendingApprovalsCount, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [isAdmin]);
+
+  const fetchPendingApprovalsCount = async () => {
+    if (!isAdmin) return;
+    try {
+      const data = await adminApi.getPendingApprovals();
+      const count = data.pending_members.length + data.pending_bookings.length;
+      setPendingApprovalsCount(count);
+    } catch (error) {
+      console.error("Failed to fetch pending approvals count:", error);
+    }
+  };
+
+  const handleApprovalsComplete = () => {
+    fetchPendingApprovalsCount();
+  };
+
+  // ---------------------------------------------------------------------------
   // LOGOUT HANDLER
   // ---------------------------------------------------------------------------
   const handleLogout = async () => {
@@ -74,16 +107,33 @@ export default function Navigation() {
 
   // ---------------------------------------------------------------------------
   // FACILITY DROPDOWN ITEMS
-  // Adjust hrefs if you split pitch routes (e.g. /dashboard/pitch/main, /dashboard/pitch/minor)
-  // Keys use href::label to avoid duplicate key warnings if hrefs repeat intentionally.
+  // Filter based on user role:
+  // - MEMBER: Gym, Ball Wall, Clubhouse only
+  // - COACH: All facilities (with approval required for pitches)
+  // - ADMIN: All facilities
   // ---------------------------------------------------------------------------
-  const facilityItems: NavLinkItem[] = [
+  const allFacilityItems: NavLinkItem[] = [
     { href: "/dashboard/book", label: "Gym" },
     { href: "/dashboard/pitches/main", label: "Main Pitch" },
     { href: "/dashboard/pitches/minor", label: "Minor Pitch" },
     { href: "/dashboard/ball-wall", label: "Ball Wall" },
     { href: "/dashboard/clubhouse", label: "Clubhouse Room" },
   ];
+
+  // Filter facilities based on user role
+  const facilityItems = useMemo(() => {
+    if (isAdmin || isCoach) {
+      // Admins and Coaches can see all facilities
+      return allFacilityItems;
+    } else {
+      // Regular members can only see Gym, Ball Wall, and Clubhouse
+      return allFacilityItems.filter((item) =>
+        item.href === "/dashboard/book" || // Gym
+        item.href === "/dashboard/ball-wall" || // Ball Wall
+        item.href === "/dashboard/clubhouse" // Clubhouse
+      );
+    }
+  }, [isAdmin, isCoach]);
 
   // ---------------------------------------------------------------------------
   // DESKTOP TOP-LEVEL LINKS (center area)
@@ -272,6 +322,35 @@ export default function Navigation() {
 
           {/* ------------------------- RIGHT: USER DROPDOWN --------------------- */}
           <div className="hidden md:flex md:items-center md:space-x-4">
+            {/* Approvals Button (Admins only) */}
+            {isAdmin && (
+              <button
+                onClick={() => setShowApprovalsModal(true)}
+                className="relative flex items-center gap-2 px-3 py-2 text-sm font-medium text-white hover:text-gray-100 transition-colors"
+                aria-label="Pending approvals"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                  />
+                </svg>
+                <span>Approvals</span>
+                {pendingApprovalsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-500 rounded-full">
+                    {pendingApprovalsCount > 9 ? "9+" : pendingApprovalsCount}
+                  </span>
+                )}
+              </button>
+            )}
+
             <div ref={userRef} className="relative">
               {/* Trigger: click toggles the user menu */}
               <button
@@ -460,6 +539,41 @@ export default function Navigation() {
 
             <hr className="my-2 border-white/20" />
 
+            {/* APPROVALS BUTTON (Admins only - Mobile) */}
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setShowApprovalsModal(true);
+                  setIsMobileMenuOpen(false);
+                }}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-base font-medium text-white hover:text-gray-100 hover:bg-white/10"
+              >
+                <div className="flex items-center gap-2">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                    />
+                  </svg>
+                  <span>Pending Approvals</span>
+                </div>
+                {pendingApprovalsCount > 0 && (
+                  <span className="flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold text-white bg-red-500 rounded-full">
+                    {pendingApprovalsCount > 9 ? "9+" : pendingApprovalsCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            <hr className="my-2 border-white/20" />
+
             {/* (3) USER (collapsible) */}
             <button
               onClick={() => setIsMobileUserOpen((v) => !v)}
@@ -536,6 +650,15 @@ export default function Navigation() {
             )}
           </div>
         </div>
+      )}
+
+      {/* =============================== APPROVALS MODAL ====================== */}
+      {isAdmin && (
+        <ApprovalsModal
+          isOpen={showApprovalsModal}
+          onClose={() => setShowApprovalsModal(false)}
+          onApprovalComplete={handleApprovalsComplete}
+        />
       )}
     </nav>
   );

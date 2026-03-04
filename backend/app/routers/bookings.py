@@ -17,6 +17,8 @@ All booking errors return structured JSON with:
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from typing import Optional
 from datetime import datetime, date
 from uuid import UUID
@@ -113,6 +115,96 @@ async def list_my_bookings(
 
 
 # ------------------------------------------------------------
+# LIST ALL BOOKINGS (READ-ONLY FOR SCHEDULE VIEW)
+# ------------------------------------------------------------
+@router.get(
+    "/all",
+    response_model=PaginatedBookingsResponse,
+    summary="List all gym bookings (schedule view)",
+)
+async def list_all_bookings(
+    status: Optional[str] = Query(None, description="Filter by status: confirmed or cancelled"),
+    from_date: Optional[datetime] = Query(None, description="Filter bookings starting from this date"),
+    to_date: Optional[datetime] = Query(None, description="Filter bookings ending before this date"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(100, ge=1, le=500, description="Items per page"),
+    member: Member = Depends(get_current_member),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all gym bookings for schedule view (read-only).
+
+    This endpoint allows any authenticated member to view all gym bookings
+    for calendar/schedule purposes. Members cannot modify bookings through
+    this endpoint - it's read-only for viewing the facility schedule.
+
+    Note: This only returns gym bookings (resource_id is NULL).
+    For pitch/ball wall bookings, use the pitch endpoints.
+    """
+    service = BookingService(db)
+
+    # Convert string → enum
+    status_enum = None
+    if status:
+        try:
+            status_enum = BookingStatus(status.upper())
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid status. Use 'confirmed' or 'cancelled'",
+            )
+
+    # Use the same service method but without member_id filter
+    # This will return all gym bookings (resource_id is NULL)
+    from app.models.booking import Booking
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.models.user import User
+
+    # Build query for gym bookings only (resource_id is NULL)
+    query = select(Booking).options(
+        selectinload(Booking.member).selectinload(Member.user),
+        selectinload(Booking.creator)
+    ).where(Booking.resource_id.is_(None))
+
+    count_query = select(func.count(Booking.id)).where(Booking.resource_id.is_(None))
+
+    # Apply filters
+    if status_enum:
+        query = query.where(Booking.status == status_enum)
+        count_query = count_query.where(Booking.status == status_enum)
+
+    if from_date:
+        query = query.where(Booking.start_time >= from_date)
+        count_query = count_query.where(Booking.start_time >= from_date)
+
+    if to_date:
+        query = query.where(Booking.end_time <= to_date)
+        count_query = count_query.where(Booking.end_time <= to_date)
+
+    # Get total count
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+
+    # Apply pagination and ordering
+    offset = (page - 1) * limit
+    query = query.offset(offset).limit(limit).order_by(Booking.start_time.desc())
+
+    result = await db.execute(query)
+    bookings = list(result.scalars().all())
+
+    # Enrich bookings with resource and creator information
+    enriched_bookings = [BookingResponse.from_booking(b) for b in bookings]
+
+    return {
+        "bookings": enriched_bookings,
+        "total": total,
+        "page": page,
+        "limit": limit,
+    }
+
+
+# ------------------------------------------------------------
 # CHECK AVAILABILITY
 # ------------------------------------------------------------
 @router.get(
@@ -159,6 +251,8 @@ async def create_booking(
             party_size=booking_data.party_size,
             created_by=member.user_id,
             admin_override=False,
+            creator_role=member.user.role.value,
+            resource_id=booking_data.resource_id,
         )
         return booking
     

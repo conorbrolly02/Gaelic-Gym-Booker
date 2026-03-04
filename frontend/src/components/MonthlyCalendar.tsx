@@ -14,13 +14,14 @@
 
 import React, { useState, useEffect } from "react";
 import { Booking } from "@/types";
-import { bookingApi, pitchApi } from "@/lib/api";
+import { bookingApi, pitchApi, adminApi } from "@/lib/api";
 
 interface MonthlyCalendarProps {
   onDayClick?: (date: Date, bookings: Booking[]) => void;
+  showAllBookings?: boolean; // If true, show all users' bookings (admin/schedule view)
 }
 
-export default function MonthlyCalendar({ onDayClick }: MonthlyCalendarProps) {
+export default function MonthlyCalendar({ onDayClick, showAllBookings = false }: MonthlyCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,16 +55,28 @@ export default function MonthlyCalendar({ onDayClick }: MonthlyCalendarProps) {
       // Check if this month is in the past
       const isPastMonth = monthEnd < today;
 
-      // Fetch gym bookings AND pitch/ball wall bookings
-      const params = isPastMonth ? { past: true } : { upcoming: true };
+      let allBookings: any[] = [];
 
-      const [gymBookings, pitchBookings] = await Promise.all([
-        bookingApi.getBookings(params),
-        pitchApi.getMemberPitchBookings(params)
-      ]);
+      if (showAllBookings) {
+        // Schedule view - fetch all bookings (available to all members)
+        // Use member-accessible endpoints that return all bookings for calendar view
+        const gymBookings = await bookingApi.getAllBookings({});
+        const pitchBookings = await pitchApi.getAllPitchBookings(
+          isPastMonth ? { past: true } : { upcoming: true }
+        );
 
-      // Combine all bookings
-      const allBookings = [...gymBookings, ...pitchBookings];
+        allBookings = [...gymBookings, ...pitchBookings];
+      } else {
+        // Member view - fetch only current user's bookings
+        const params = isPastMonth ? { past: true } : { upcoming: true };
+
+        const [gymBookings, pitchBookings] = await Promise.all([
+          bookingApi.getBookings(params),
+          pitchApi.getMemberPitchBookings(params)
+        ]);
+
+        allBookings = [...gymBookings, ...pitchBookings];
+      }
 
       // Filter to current month
       const filtered = allBookings.filter((booking) => {
@@ -165,16 +178,11 @@ export default function MonthlyCalendar({ onDayClick }: MonthlyCalendarProps) {
     // Main Pitch - Green
     if (facilityName.includes("main pitch")) return "bg-green-600";
 
-    // Minor Pitch - Lime
-    if (facilityName.includes("minor pitch")) return "bg-lime-600";
+    // Minor Pitch - Orange
+    if (facilityName.includes("minor pitch")) return "bg-orange-600";
 
     // Ball Wall - Sky Blue
     if (facilityName.includes("ball wall")) return "bg-sky-500";
-
-    // Committee Rooms - Purple/Violet
-    if (facilityName.includes("room a")) return "bg-purple-600";
-    if (facilityName.includes("room b")) return "bg-violet-600";
-    if (facilityName.includes("room")) return "bg-purple-500";
 
     return "bg-gray-500";
   };
@@ -257,20 +265,12 @@ export default function MonthlyCalendar({ onDayClick }: MonthlyCalendarProps) {
             <span className="font-medium">Main Pitch</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-lime-600 border border-white/20"></div>
+            <div className="w-3 h-3 rounded-full bg-orange-600 border border-white/20"></div>
             <span className="font-medium">Minor Pitch</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-full bg-sky-500 border border-white/20"></div>
             <span className="font-medium">Ball Wall</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-purple-600 border border-white/20"></div>
-            <span className="font-medium">Room A</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-violet-600 border border-white/20"></div>
-            <span className="font-medium">Room B</span>
           </div>
         </div>
       </div>

@@ -476,6 +476,8 @@ async def create_booking_for_member(
             party_size=booking_data.party_size,
             created_by=admin.id,
             admin_override=override_rules,
+            creator_role=admin.role.value,
+            resource_id=booking_data.resource_id if hasattr(booking_data, 'resource_id') else None,
         )
         
         return {
@@ -493,6 +495,48 @@ async def create_booking_for_member(
         return booking_error_response(e, 409 if e.code == BookingErrorCode.CAPACITY_EXCEEDED else 400)
 
 
+@router.patch(
+    "/bookings/{booking_id}/approve",
+    response_model=dict,
+    summary="Approve a pending booking",
+)
+async def approve_booking(
+    booking_id: UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Approve a booking that is pending approval.
+
+    Changes status from PENDING_APPROVAL to CONFIRMED.
+    """
+    service = BookingService(db)
+
+    booking = await service.get_booking_by_id(booking_id)
+
+    if not booking:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
+        )
+
+    if booking.status != BookingStatus.PENDING_APPROVAL:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Booking is not pending approval",
+        )
+
+    booking.status = BookingStatus.CONFIRMED
+    await db.commit()
+    await db.refresh(booking)
+
+    return {
+        "id": str(booking.id),
+        "status": booking.status.value,
+        "message": "Booking approved successfully",
+    }
+
+
 @router.delete(
     "/bookings/{booking_id}",
     response_model=dict,
@@ -505,17 +549,18 @@ async def admin_cancel_booking(
 ):
     """
     Cancel any booking (admin override).
-    
+
     Admin can cancel any member's booking regardless of ownership.
+    This can also be used to reject pending bookings.
     """
     service = BookingService(db)
-    
+
     try:
         booking = await service.cancel_booking(
             booking_id=booking_id,
             cancelled_by=admin.id,
         )
-        
+
         return {
             "id": str(booking.id),
             "status": booking.status.value,
@@ -523,7 +568,7 @@ async def admin_cancel_booking(
             "cancelled_at": booking.cancelled_at,
             "message": "Booking cancelled by admin",
         }
-    
+
     except BookingError as e:
         status_code = 404 if e.code == BookingErrorCode.BOOKING_NOT_FOUND else 400
         return booking_error_response(e, status_code)
@@ -532,6 +577,87 @@ async def admin_cancel_booking(
 # ============================================
 # Dashboard Statistics
 # ============================================
+
+@router.get(
+    "/pending-approvals",
+    response_model=dict,
+    summary="Get all pending approvals",
+)
+async def get_pending_approvals(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all items pending approval (members and bookings).
+
+    Returns members awaiting approval and bookings awaiting approval.
+    """
+    from sqlalchemy import select
+    from app.models.member import Member
+    from app.models.booking import Booking
+
+    # Get pending members
+    pending_members_result = await db.execute(
+        select(Member).where(
+            Member.membership_status == MembershipStatus.PENDING
+        ).order_by(Member.created_at.asc())
+    )
+    pending_members = pending_members_result.scalars().all()
+
+    # Get pending bookings
+    pending_bookings_result = await db.execute(
+        select(Booking).where(
+            Booking.status == BookingStatus.PENDING_APPROVAL
+        ).order_by(Booking.created_at.asc())
+    )
+    pending_bookings = pending_bookings_result.scalars().all()
+
+    # Build response with member info
+    member_list = []
+    for member in pending_members:
+        member_list.append({
+            "id": str(member.id),
+            "user_id": str(member.user_id),
+            "email": member.user.email,
+            "full_name": member.full_name,
+            "phone": member.phone,
+            "created_at": member.created_at,
+        })
+
+    # Build response with booking info
+    booking_list = []
+    for booking in pending_bookings:
+        member_name = "Unknown"
+        member_email = "Unknown"
+        resource_name = "Unknown"
+
+        if booking.member:
+            member_name = booking.member.full_name
+            if hasattr(booking.member, 'user') and booking.member.user:
+                member_email = booking.member.user.email
+
+        if booking.resource:
+            resource_name = booking.resource.name
+
+        booking_list.append({
+            "id": str(booking.id),
+            "member_id": str(booking.member_id),
+            "member_name": member_name,
+            "member_email": member_email,
+            "resource_id": str(booking.resource_id) if booking.resource_id else None,
+            "resource_name": resource_name,
+            "start_time": booking.start_time,
+            "end_time": booking.end_time,
+            "party_size": booking.party_size,
+            "created_at": booking.created_at,
+        })
+
+    return {
+        "pending_members": member_list,
+        "pending_bookings": booking_list,
+        "total_pending": len(member_list) + len(booking_list),
+    }
+
 
 @router.get(
     "/stats",
@@ -548,36 +674,55 @@ async def get_stats(
     from sqlalchemy import select, func
     from app.models.member import Member
     from app.models.booking import Booking
-    
+
     # Count members by status
-    total_members = await db.execute(select(func.count(Member.id)))
-    pending_members = await db.execute(
+    total_members_result = await db.execute(select(func.count(Member.id)))
+    total_members = total_members_result.scalar()
+
+    pending_members_result = await db.execute(
         select(func.count(Member.id)).where(
             Member.membership_status == MembershipStatus.PENDING
         )
     )
-    active_members = await db.execute(
+    pending_members = pending_members_result.scalar()
+
+    active_members_result = await db.execute(
         select(func.count(Member.id)).where(
             Member.membership_status == MembershipStatus.ACTIVE
         )
     )
-    
-    # Count bookings
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    active_members = active_members_result.scalar()
+
+    # Count pending bookings
+    pending_bookings_result = await db.execute(
+        select(func.count(Booking.id)).where(
+            Booking.status == BookingStatus.PENDING_APPROVAL
+        )
+    )
+    pending_bookings = pending_bookings_result.scalar()
+
+    # Count bookings today (confirmed bookings only)
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start.replace(hour=23, minute=59, second=59)
-    
-    bookings_today = await db.execute(
+
+    bookings_today_result = await db.execute(
         select(func.count(Booking.id)).where(
             Booking.status == BookingStatus.CONFIRMED,
             Booking.start_time >= today_start,
             Booking.start_time <= today_end,
         )
     )
-    
+    bookings_today = bookings_today_result.scalar()
+
+    # Total pending approvals = pending members + pending bookings
+    total_pending_approvals = pending_members + pending_bookings
+
     return {
-        "total_members": total_members.scalar(),
-        "pending_approvals": pending_members.scalar(),
-        "active_members": active_members.scalar(),
-        "bookings_today": bookings_today.scalar(),
+        "total_members": total_members,
+        "pending_members": pending_members,
+        "pending_bookings": pending_bookings,
+        "pending_approvals": total_pending_approvals,
+        "active_members": active_members,
+        "total_bookings_today": bookings_today,
     }
 

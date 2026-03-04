@@ -19,11 +19,13 @@ class BookingStatus(str, enum.Enum):
     """
     Enum defining booking statuses.
 
+    - PENDING_APPROVAL: Booking awaiting admin approval (coaches booking pitches)
     - CONFIRMED: Active booking
     - CANCELLED: Booking was cancelled (soft delete)
 
     Note: Values must match the PostgreSQL enum values (uppercase)
     """
+    PENDING_APPROVAL = "PENDING_APPROVAL"
     CONFIRMED = "CONFIRMED"
     CANCELLED = "CANCELLED"
 

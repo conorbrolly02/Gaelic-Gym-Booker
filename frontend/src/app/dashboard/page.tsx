@@ -122,6 +122,25 @@ export default function DashboardPage() {
     return "Good evening";
   };
 
+  /** Get facility badge color */
+  const getFacilityBadgeColor = (booking: Booking): string => {
+    const facilityName = booking.resource_name?.toLowerCase() || "";
+
+    // Gym - Blue
+    if (facilityName.includes("gym")) return "bg-blue-100 text-blue-800 border border-blue-200";
+
+    // Main Pitch - Green
+    if (facilityName.includes("main pitch")) return "bg-green-100 text-green-800 border border-green-200";
+
+    // Minor Pitch - Orange
+    if (facilityName.includes("minor pitch")) return "bg-orange-100 text-orange-800 border border-orange-200";
+
+    // Ball Wall - Sky Blue
+    if (facilityName.includes("ball wall")) return "bg-sky-100 text-sky-800 border border-sky-200";
+
+    return "bg-gray-100 text-gray-800 border border-gray-200";
+  };
+
   /** Client-side safeguards: only include true upcoming/past based on end_time vs current time */
   const filteredUpcoming = useMemo(
     () => (upcoming ?? []).filter(b => new Date(b.end_time).getTime() >= Date.now()),
@@ -177,10 +196,22 @@ export default function DashboardPage() {
           <div className="font-medium text-gray-900">
             {time} - {endTime}
           </div>
-          {/* Facility name (if present) */}
-          {"facility_name" in booking && (booking as any).facility_name ? (
-            <div className="text-sm text-gray-600">{(booking as any).facility_name}</div>
+          {/* Facility name with color badge */}
+          {booking.resource_name ? (
+            <div className="mt-1">
+              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getFacilityBadgeColor(booking)}`}>
+                {booking.resource_name}
+              </span>
+            </div>
           ) : null}
+          {/* Team/Requester info */}
+          {(booking.team_name || booking.requester_name) && (
+            <div className="mt-1 text-xs text-gray-600">
+              {booking.team_name && <span className="font-medium">{booking.team_name}</span>}
+              {booking.team_name && booking.requester_name && <span className="mx-1">·</span>}
+              {booking.requester_name && <span>{booking.requester_name}</span>}
+            </div>
+          )}
           {today && (
             <span className="inline-block mt-1 px-2 py-0.5 bg-primary-100 text-primary-700 text-xs font-medium rounded-full">
               Today

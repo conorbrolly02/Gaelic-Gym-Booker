@@ -24,11 +24,12 @@ export type MembershipStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | "CANCELLED";
 
 /**
  * Booking status
+ * - PENDING_APPROVAL: Booking awaiting admin approval (coaches booking pitches)
  * - CONFIRMED: Booking is active and confirmed
  * - CANCELLED: Booking has been cancelled
  * - COMPLETED: Booking time has passed (historical)
  */
-export type BookingStatus = "CONFIRMED" | "CANCELLED" | "COMPLETED";
+export type BookingStatus = "PENDING_APPROVAL" | "CONFIRMED" | "CANCELLED" | "COMPLETED";
 
 /**
  * Recurring pattern types
@@ -90,6 +91,12 @@ export interface Booking {
   cancelled_by?: string;
   cancelled_at?: string;
   created_at: string;
+  // Pitch/Ball Wall booking specific fields
+  title?: string;          // Booking title/description
+  requester_name?: string; // Name of person requesting the booking
+  team_name?: string;      // Team name if applicable
+  notes?: string;          // Additional notes
+  area?: string;           // Area of pitch (whole, half-left, half-right)
 }
 
 /**
@@ -133,10 +140,49 @@ export interface SlotAvailability {
 export interface AdminStats {
   total_members: number;
   pending_members: number;
+  pending_bookings: number;
+  pending_approvals: number;
   active_members: number;
-  suspended_members: number;
+  suspended_members?: number;
   total_bookings_today: number;
-  upcoming_bookings: number;
+  upcoming_bookings?: number;
+}
+
+/**
+ * Pending approval item (member)
+ */
+export interface PendingMember {
+  id: string;
+  user_id: string;
+  email: string;
+  full_name: string;
+  phone?: string;
+  created_at: string;
+}
+
+/**
+ * Pending approval item (booking)
+ */
+export interface PendingBooking {
+  id: string;
+  member_id: string;
+  member_name: string;
+  member_email: string;
+  resource_id?: string;
+  resource_name: string;
+  start_time: string;
+  end_time: string;
+  party_size: number;
+  created_at: string;
+}
+
+/**
+ * All pending approvals response
+ */
+export interface PendingApprovalsResponse {
+  pending_members: PendingMember[];
+  pending_bookings: PendingBooking[];
+  total_pending: number;
 }
 
 /**

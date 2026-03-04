@@ -242,7 +242,9 @@ class BookingService:
         booking_type: str = "SINGLE",
         party_size: int = 1,
         recurring_pattern_id: Optional[UUID] = None,
-        admin_override: bool = False
+        admin_override: bool = False,
+        creator_role: Optional[str] = None,
+        resource_id: Optional[UUID] = None
     ) -> Booking:
         """
         Create a new booking after validation.
@@ -312,15 +314,38 @@ class BookingService:
                 )
         
         from app.models.booking import BookingType
+        from app.models.resource import Resource, ResourceType
+        from app.models.user import UserRole
         import logging
         logger = logging.getLogger(__name__)
         logger.info(f"Creating booking: booking_type={booking_type}, party_size={party_size}")
 
+        # Determine if booking requires approval
+        # Coaches booking pitches (main or minor) and ball wall need admin approval
+        # Members and Admins are auto-approved for their allowed resources
+        requires_approval = False
+        if creator_role == UserRole.COACH.value and resource_id:
+            # Check if resource is a pitch or ball wall
+            result = await self.db.execute(
+                select(Resource).where(Resource.id == resource_id)
+            )
+            resource = result.scalar_one_or_none()
+            if resource and resource.type in [
+                ResourceType.PITCH,
+                ResourceType.PITCH_HALF,
+                ResourceType.PITCH_QUARTER,
+                ResourceType.BALL_WALL
+            ]:
+                requires_approval = True
+
+        booking_status = BookingStatus.PENDING_APPROVAL if requires_approval else BookingStatus.CONFIRMED
+
         booking = Booking(
             member_id=member_id,
+            resource_id=resource_id,
             start_time=start_time,
             end_time=end_time,
-            status=BookingStatus.CONFIRMED,
+            status=booking_status,
             booking_type=BookingType(booking_type),
             party_size=party_size,
             recurring_pattern_id=recurring_pattern_id,

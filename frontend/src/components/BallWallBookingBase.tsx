@@ -15,6 +15,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { CourtSelection, COURT_LABELS } from "@/constants/ballwall";
 import { pitchApi } from "@/lib/api";
 import RecurringBookingModal, { RecurringBookingData } from "@/components/RecurringBookingModal";
+import { useAuth } from "@/context/AuthContext";
 
 interface BallWallBookingProps {
   ballWallId: string;
@@ -40,6 +41,7 @@ export default function BallWallBookingBase({
   ballWallId,
   ballWallName,
 }: BallWallBookingProps) {
+  const { isCoach } = useAuth();
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [selectedCourt, setSelectedCourt] = useState<CourtSelection>("both");
   const [availability, setAvailability] = useState<BallWallAvailability | null>(null);
@@ -147,7 +149,13 @@ export default function BallWallBookingBase({
       setBookingType("SINGLE");
       setPartySize(1);
       fetchAvailability();
-      alert("Ball wall booking created successfully!");
+
+      // Show appropriate message based on role
+      if (isCoach) {
+        alert("Booking request submitted! Your ball wall booking is pending admin approval. You will be notified once it has been reviewed.");
+      } else {
+        alert("Ball wall booking created successfully!");
+      }
     } catch (err: any) {
       setError(err.message || "Error creating booking");
     } finally {
@@ -180,10 +188,19 @@ export default function BallWallBookingBase({
         party_size: partySize,
       });
 
-      setRecurringSuccess(
-        `Recurring booking created! ${result.bookings_created} bookings created successfully.` +
-        (result.conflicts_skipped > 0 ? ` ${result.conflicts_skipped} skipped due to conflicts.` : "")
-      );
+      // Show appropriate message based on role
+      if (isCoach) {
+        setRecurringSuccess(
+          `Recurring booking requests submitted! ${result.bookings_created} ball wall bookings are pending admin approval.` +
+          (result.conflicts_skipped > 0 ? ` ${result.conflicts_skipped} skipped due to conflicts.` : "") +
+          ` You will be notified once they have been reviewed.`
+        );
+      } else {
+        setRecurringSuccess(
+          `Recurring booking created! ${result.bookings_created} bookings created successfully.` +
+          (result.conflicts_skipped > 0 ? ` ${result.conflicts_skipped} skipped due to conflicts.` : "")
+        );
+      }
 
       setShowRecurringModal(false);
       fetchAvailability();

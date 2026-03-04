@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking, BookingStatus
 from app.models.resource import Resource, ResourceType
+from app.models.user import UserRole
 from app.schemas.pitch import AvailabilitySlotOut, PitchBookingIn, PitchBookingOut
 from app.config import settings
 
@@ -319,7 +320,8 @@ class PitchBookingService:
         self,
         data: PitchBookingIn,
         created_by_user_id: UUID,
-        member_id_override: Optional[UUID] = None
+        member_id_override: Optional[UUID] = None,
+        user_role: Optional[UserRole] = None
     ) -> Booking:
         """
         Create a new pitch booking with area conflict validation.
@@ -328,12 +330,19 @@ class PitchBookingService:
             data: Booking request data
             created_by_user_id: UUID of user creating the booking
             member_id_override: Optional member_id (for admin booking on behalf)
+            user_role: User role for determining approval status
 
         Returns:
             Created Booking instance
 
         Raises:
             ValueError: If pitch not found, area conflicts, or other validation fails
+
+        Note:
+            Booking status is set based on user role:
+            - ADMIN: Always CONFIRMED
+            - COACH: PENDING_APPROVAL for pitches and ball wall
+            - MEMBER: CONFIRMED for allowed resources
         """
         # 1. Validate pitch/ball wall exists and is active
         result = await self.db.execute(
@@ -378,13 +387,23 @@ class PitchBookingService:
                     f"(area: {booking.area}, time: {booking.start_time} - {booking.end_time})"
                 )
 
-        # 5. Create booking
+        # 5. Determine booking status based on user role
+        # Coaches need approval for pitches and ball wall
+        # Admins are auto-approved
+        # Members should not reach this for pitches (UI restriction)
+        if user_role == UserRole.COACH:
+            booking_status = BookingStatus.PENDING_APPROVAL
+        else:
+            # Admin or no role specified (defaults to confirmed)
+            booking_status = BookingStatus.CONFIRMED
+
+        # 6. Create booking
         new_booking = Booking(
             member_id=final_member_id,
             resource_id=data.pitch_id,
             start_time=data.start,
             end_time=data.end,
-            status=BookingStatus.CONFIRMED,
+            status=booking_status,
             booking_type=data.booking_type,
             party_size=data.party_size,
             area=data.area,

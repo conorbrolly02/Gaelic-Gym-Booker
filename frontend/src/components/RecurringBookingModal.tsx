@@ -63,8 +63,12 @@ export default function RecurringBookingModal({
   const [teamName, setTeamName] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Set default dates
+  // Set default dates and reset error on mount
   useEffect(() => {
+    // Clear any previous errors when modal opens
+    setError(null);
+    setSubmitting(false);
+
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split("T")[0];
@@ -77,8 +81,13 @@ export default function RecurringBookingModal({
     setValidUntil(oneMonthStr);
   }, [minDate]);
 
-  // Calculate preview count
+  // Calculate preview count and clear errors when dates change
   useEffect(() => {
+    // Clear error when user changes dates after a validation error
+    if (error && (validFrom || validUntil)) {
+      setError(null);
+    }
+
     if (!validFrom || !validUntil || !startTime) {
       setPreviewCount(null);
       return;
@@ -97,7 +106,7 @@ export default function RecurringBookingModal({
     }
 
     setPreviewCount(count);
-  }, [patternType, selectedDays, validFrom, validUntil, startTime]);
+  }, [patternType, selectedDays, validFrom, validUntil, startTime, error]);
 
   const toggleDay = (day: number) => {
     setSelectedDays((prev) =>
@@ -108,6 +117,7 @@ export default function RecurringBookingModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSubmitting(false); // Reset submitting state in case it was stuck
 
     // Validation
     if (!title || title.length < 3) {
@@ -172,7 +182,6 @@ export default function RecurringBookingModal({
       onClose();
     } catch (err: any) {
       setError(err.message || "Failed to create recurring booking");
-    } finally {
       setSubmitting(false);
     }
   };

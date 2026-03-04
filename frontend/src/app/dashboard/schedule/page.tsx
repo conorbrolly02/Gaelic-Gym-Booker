@@ -16,8 +16,10 @@ import React, { useState } from "react";
 import MonthlyCalendar from "@/components/MonthlyCalendar";
 import CreateBookingModal from "@/components/CreateBookingModal";
 import { Booking } from "@/types";
+import { useAuth } from "@/context/AuthContext";
 
 export default function SchedulePage() {
+  const { isAdmin, isCoach } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedDayBookings, setSelectedDayBookings] = useState<Booking[]>([]);
   const [showDayModal, setShowDayModal] = useState(false);
@@ -67,20 +69,11 @@ export default function SchedulePage() {
     // Main Pitch - Green
     if (facilityName.includes("main pitch")) return "bg-green-100 text-green-800 border border-green-200";
 
-    // Minor Pitch - Lime
-    if (facilityName.includes("minor pitch")) return "bg-lime-100 text-lime-800 border border-lime-200";
+    // Minor Pitch - Orange
+    if (facilityName.includes("minor pitch")) return "bg-orange-100 text-orange-800 border border-orange-200";
 
     // Ball Wall - Sky Blue
     if (facilityName.includes("ball wall")) return "bg-sky-100 text-sky-800 border border-sky-200";
-
-    // Committee Room A - Purple
-    if (facilityName.includes("room a")) return "bg-purple-100 text-purple-800 border border-purple-200";
-
-    // Committee Room B - Violet
-    if (facilityName.includes("room b")) return "bg-violet-100 text-violet-800 border border-violet-200";
-
-    // Generic Room - Purple
-    if (facilityName.includes("room")) return "bg-purple-100 text-purple-800 border border-purple-200";
 
     return "bg-gray-100 text-gray-800 border border-gray-200";
   };
@@ -91,7 +84,12 @@ export default function SchedulePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
-          <p className="text-gray-600 mt-1">View all your upcoming bookings in calendar format</p>
+          <p className="text-gray-600 mt-1">
+            {isAdmin
+              ? "View all bookings from all members in calendar format"
+              : "View facility schedule and create bookings for Gym and Ball Wall"
+            }
+          </p>
         </div>
         <button
           onClick={() => {
@@ -107,10 +105,30 @@ export default function SchedulePage() {
         </button>
       </div>
 
+      {/* Member Info Card */}
+      {!isAdmin && !isCoach && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0">
+              <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-blue-900 mb-1">Member Booking Access</h3>
+              <p className="text-sm text-blue-800">
+                You can view the full facility schedule and create bookings for the <strong>Gym</strong> and <strong>Ball Wall</strong>.
+                Pitch bookings are available to coaches and administrators.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Facility Legend Card */}
       <div className="card">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Facility Color Guide</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 border border-blue-200">
             <div className="w-4 h-4 rounded-full bg-blue-600 flex-shrink-0"></div>
             <span className="text-sm font-medium text-blue-900">Gym</span>
@@ -119,27 +137,19 @@ export default function SchedulePage() {
             <div className="w-4 h-4 rounded-full bg-green-600 flex-shrink-0"></div>
             <span className="text-sm font-medium text-green-900">Main Pitch</span>
           </div>
-          <div className="flex items-center gap-2 p-2 rounded-lg bg-lime-50 border border-lime-200">
-            <div className="w-4 h-4 rounded-full bg-lime-600 flex-shrink-0"></div>
-            <span className="text-sm font-medium text-lime-900">Minor Pitch</span>
+          <div className="flex items-center gap-2 p-2 rounded-lg bg-orange-50 border border-orange-200">
+            <div className="w-4 h-4 rounded-full bg-orange-600 flex-shrink-0"></div>
+            <span className="text-sm font-medium text-orange-900">Minor Pitch</span>
           </div>
           <div className="flex items-center gap-2 p-2 rounded-lg bg-sky-50 border border-sky-200">
             <div className="w-4 h-4 rounded-full bg-sky-500 flex-shrink-0"></div>
             <span className="text-sm font-medium text-sky-900">Ball Wall</span>
           </div>
-          <div className="flex items-center gap-2 p-2 rounded-lg bg-purple-50 border border-purple-200">
-            <div className="w-4 h-4 rounded-full bg-purple-600 flex-shrink-0"></div>
-            <span className="text-sm font-medium text-purple-900">Room A</span>
-          </div>
-          <div className="flex items-center gap-2 p-2 rounded-lg bg-violet-50 border border-violet-200">
-            <div className="w-4 h-4 rounded-full bg-violet-600 flex-shrink-0"></div>
-            <span className="text-sm font-medium text-violet-900">Room B</span>
-          </div>
         </div>
       </div>
 
       {/* Monthly Calendar */}
-      <MonthlyCalendar key={refreshKey} onDayClick={handleDayClick} />
+      <MonthlyCalendar key={refreshKey} onDayClick={handleDayClick} showAllBookings={true} />
 
       {/* Day View Modal */}
       {showDayModal && selectedDate && (

@@ -141,6 +141,27 @@ export default function MyBookingsPage() {
     }
   };
 
+  /**
+   * Get facility badge color
+   */
+  const getFacilityBadgeColor = (booking: Booking): string => {
+    const facilityName = booking.resource_name?.toLowerCase() || "";
+
+    // Gym - Blue
+    if (facilityName.includes("gym")) return "bg-blue-100 text-blue-800 border border-blue-200";
+
+    // Main Pitch - Green
+    if (facilityName.includes("main pitch")) return "bg-green-100 text-green-800 border border-green-200";
+
+    // Minor Pitch - Orange
+    if (facilityName.includes("minor pitch")) return "bg-orange-100 text-orange-800 border border-orange-200";
+
+    // Ball Wall - Sky Blue
+    if (facilityName.includes("ball wall")) return "bg-sky-100 text-sky-800 border border-sky-200";
+
+    return "bg-gray-100 text-gray-800 border border-gray-200";
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -215,6 +236,7 @@ export default function MyBookingsPage() {
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Date</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Time</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Facility</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Team/Requester</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Type</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-600">Status</th>
                     <th className="text-right py-3 px-4 font-medium text-gray-600">Actions</th>
@@ -233,8 +255,24 @@ export default function MyBookingsPage() {
                         <td className="py-4 px-4 text-gray-600">
                           {start.time} - {end.time}
                         </td>
-                        <td className="py-4 px-4 text-gray-600">
-                          {booking.resource_name || "Main Gym"}
+                        <td className="py-4 px-4">
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getFacilityBadgeColor(booking)}`}>
+                            {booking.resource_name || "Main Gym"}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4 text-gray-600 text-sm">
+                          {booking.team_name ? (
+                            <div>
+                              <div className="font-medium text-gray-900">{booking.team_name}</div>
+                              {booking.requester_name && (
+                                <div className="text-xs text-gray-500">{booking.requester_name}</div>
+                              )}
+                            </div>
+                          ) : booking.requester_name ? (
+                            <div className="text-gray-900">{booking.requester_name}</div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
                         <td className="py-4 px-4 text-gray-600 text-sm">
                           {booking.booking_type === "TEAM"
@@ -277,18 +315,31 @@ export default function MyBookingsPage() {
                     className="p-4 bg-gray-50 rounded-lg border border-gray-200"
                   >
                     <div className="flex justify-between items-start mb-2">
-                      <div>
+                      <div className="flex-1">
                         <div className="font-medium text-gray-900">{start.date}</div>
                         <div className="text-sm text-gray-600">
                           {start.time} - {end.time}
                         </div>
-                        <div className="text-sm text-gray-600 mt-1">
-                          {booking.resource_name || "Main Gym"}
-                          {" • "}
-                          {booking.booking_type === "TEAM"
-                            ? `Team (${booking.party_size} people)`
-                            : "Individual"}
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getFacilityBadgeColor(booking)}`}>
+                            {booking.resource_name || "Main Gym"}
+                          </span>
+                          <span className="text-sm text-gray-600">
+                            {booking.booking_type === "TEAM"
+                              ? `Team (${booking.party_size} people)`
+                              : "Individual"}
+                          </span>
                         </div>
+                        {(booking.team_name || booking.requester_name) && (
+                          <div className="mt-2 text-sm">
+                            {booking.team_name && (
+                              <div className="font-medium text-gray-900">{booking.team_name}</div>
+                            )}
+                            {booking.requester_name && (
+                              <div className="text-gray-600">{booking.requester_name}</div>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <span className={`badge ${getStatusBadge(booking.status)}`}>
                         {booking.status}

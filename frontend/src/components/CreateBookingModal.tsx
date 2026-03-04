@@ -17,10 +17,11 @@
  * - Color-coded facility indicators
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { bookingApi, pitchApi } from "@/lib/api";
 import { PITCH_IDS } from "@/constants/pitches";
 import { BALL_WALL_ID } from "@/constants/ballwall";
+import { useAuth } from "@/context/AuthContext";
 
 interface CreateBookingModalProps {
   selectedDate: Date;
@@ -104,8 +105,26 @@ export default function CreateBookingModal({
   onClose,
   onSuccess,
 }: CreateBookingModalProps) {
+  const { isAdmin, isCoach } = useAuth();
   const [step, setStep] = useState<"facility" | "details">("facility");
   const [selectedFacility, setSelectedFacility] = useState<FacilityOption | null>(null);
+
+  // Filter facilities based on user role
+  // Members: Gym and Ball Wall only
+  // Coaches: All except can't directly book pitches (need approval)
+  // Admins: All facilities
+  const availableFacilities = useMemo(() => {
+    if (isAdmin) {
+      // Admins can book everything
+      return FACILITIES;
+    } else if (isCoach) {
+      // Coaches can book all (but pitch bookings will require approval on backend)
+      return FACILITIES;
+    } else {
+      // Regular members can only book Gym and Ball Wall
+      return FACILITIES.filter(f => f.type === "gym" || f.type === "ball-wall");
+    }
+  }, [isAdmin, isCoach]);
 
   // Form state
   const [startTime, setStartTime] = useState("");
@@ -296,8 +315,13 @@ export default function CreateBookingModal({
           {step === "facility" ? (
             <div>
               <h4 className="text-lg font-semibold text-gray-900 mb-4">Select Facility</h4>
+              {!isAdmin && !isCoach && (
+                <p className="text-sm text-gray-600 mb-4">
+                  As a member, you can book the Gym and Ball Wall. Pitch bookings are available to coaches and admins.
+                </p>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {FACILITIES.map((facility) => (
+                {availableFacilities.map((facility) => (
                   <button
                     key={facility.id}
                     onClick={() => handleFacilitySelect(facility)}
