@@ -98,12 +98,12 @@ class BookingResponse(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+    version: int = 1                         # ← version for optimistic locking
 
     # Optional fields added in advanced booking features
     override_reason: Optional[str] = None
     cancel_reason: Optional[str] = None
     cancel_note: Optional[str] = None
-    version: Optional[int] = None            # ← supports optimistic locking
 
     # Populated from relationships for enhanced display
     resource_name: Optional[str] = None       # Name of facility (Gym, Main Pitch, etc.)
@@ -121,6 +121,7 @@ class BookingResponse(BaseModel):
             "status": booking.status.value if hasattr(booking.status, 'value') else booking.status,
             "booking_type": booking.booking_type.value if hasattr(booking.booking_type, 'value') else booking.booking_type,
             "party_size": booking.party_size,
+            "version": booking.version,
             "recurring_pattern_id": booking.recurring_pattern_id,
             "created_by": booking.created_by,
             "cancelled_by": booking.cancelled_by,

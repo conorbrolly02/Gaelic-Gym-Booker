@@ -13,7 +13,7 @@
 
 import React, { useState, useEffect, FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Alert from "@/components/Alert";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -22,14 +22,26 @@ export default function LoginPage() {
   // Auth context
   const { login, isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Form state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  
+
   // UI state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inactivityMessage, setInactivityMessage] = useState<string | null>(null);
+
+  // Check for logout reason in URL
+  useEffect(() => {
+    const reason = searchParams?.get("reason");
+    if (reason === "inactivity") {
+      setInactivityMessage("You were logged out due to 15 minutes of inactivity. Please sign in again.");
+    } else if (reason === "manual") {
+      setInactivityMessage(null);
+    }
+  }, [searchParams]);
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -94,6 +106,13 @@ export default function LoginPage() {
 
         {/* Login Form Card */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8">
+          {/* Inactivity Alert */}
+          {inactivityMessage && (
+            <div className="mb-6">
+              <Alert type="warning" message={inactivityMessage} onClose={() => setInactivityMessage(null)} />
+            </div>
+          )}
+
           {/* Error Alert */}
           {error && (
             <div className="mb-6">

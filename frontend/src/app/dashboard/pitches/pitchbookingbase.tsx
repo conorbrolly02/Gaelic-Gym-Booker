@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import LoadingSpinner from "@/components/LoadingSpinner";
-import { bookingApi } from "@/lib/api";
+import { pitchApi } from "@/lib/api";
 import Alert from "@/components/Alert";
 import GaaPitchSvg, {
   AreaMode,
@@ -20,14 +20,17 @@ type AvailabilitySlot = {
 };
 
 type NewBookingPayload = {
-  pitch_id: number | string;
+  pitch_id: string;
   start: string;
   end: string;
-  title?: string;
-  notes?: string;
-  team_name?: string;
-  requester_name?: string;
-  area?: AreaSelection;
+  title: string;
+  requester_name: string;
+  team_name?: string | null;
+  notes?: string | null;
+  area: string;
+  booking_type: "SINGLE" | "TEAM";
+  party_size: number;
+  changing_room_ids?: string[] | null;
 };
 
 /* -------------------------------------------
@@ -78,7 +81,7 @@ export default function PitchBookingBase({
       try {
         setLoadingSlots(true);
         setError(null);
-        const daySlots = await bookingApi.getPitchAvailability(pitchId, date);
+        const daySlots = await pitchApi.getPitchAvailability(String(pitchId), date);
         if (mounted) setSlots(daySlots ?? []);
       } catch (err: any) {
         if (mounted) {
@@ -133,21 +136,23 @@ export default function PitchBookingBase({
       : `Area: ${areaLabel(area)}`;
 
     const payload: NewBookingPayload = {
-      pitch_id: pitchId,
+      pitch_id: String(pitchId),
       start: slotToBook.start,
       end: slotToBook.end,
       title: bookingTitle.trim(),
       requester_name: bookingRequester.trim(),
-      team_name: bookingTeam.trim() || undefined,
+      team_name: bookingTeam.trim() || null,
       notes: notesWithArea,
       area,
+      booking_type: "SINGLE",
+      party_size: 1,
     };
 
     try {
       setBookingSubmitting(true);
-      await bookingApi.createPitchBooking(payload);
+      await pitchApi.createPitchBooking(payload);
       setBookingSuccess("Booking created successfully.");
-      const refreshed = await bookingApi.getPitchAvailability(pitchId, date);
+      const refreshed = await pitchApi.getPitchAvailability(String(pitchId), date);
       setSlots(refreshed ?? []);
 
       setTimeout(() => {

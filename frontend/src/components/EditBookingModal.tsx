@@ -29,7 +29,7 @@ export default function EditBookingModal({
 
   async function save() {
     try {
-      const updated = await bookingApi.edit(booking.id, form);
+      const updated = await bookingApi.editBooking(booking.id, form);
       onUpdated(updated);
       onClose();
     } catch (err: any) {

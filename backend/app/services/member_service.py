@@ -214,35 +214,40 @@ class MemberService:
         self,
         member_id: UUID,
         full_name: Optional[str] = None,
-        phone: Optional[str] = None
+        phone: Optional[str] = None,
+        qr_code: Optional[str] = None
     ) -> Member:
         """
         Update a member's profile information.
-        
+
         Only provided fields are updated.
-        
+
         Args:
             member_id: The member to update
             full_name: New name (optional)
             phone: New phone (optional)
-            
+            qr_code: New QR code (optional)
+
         Returns:
             The updated Member
         """
         member = await self.get_member_by_id(member_id)
-        
+
         if not member:
             raise ValueError("Member not found")
-        
+
         if full_name is not None:
             member.full_name = full_name
-        
+
         if phone is not None:
             member.phone = phone
-        
+
+        if qr_code is not None:
+            member.qr_code = qr_code
+
         await self.db.commit()
         await self.db.refresh(member)
-        
+
         return member
     
     async def get_member_stats(self, member_id: UUID) -> dict:
@@ -353,4 +358,103 @@ class MemberService:
         await self.db.refresh(member)
 
         return member
+
+    async def get_member_analytics(self, member_id: UUID) -> dict:
+        """
+        Get detailed analytics about a member's booking history.
+
+        Provides comprehensive statistics including:
+        - Total bookings, upcoming, completed, cancelled
+        - Breakdown by facility type
+        - Total hours booked
+        - Membership duration
+
+        Args:
+            member_id: The member to get analytics for
+
+        Returns:
+            Dict with detailed analytics data
+
+        Raises:
+            ValueError: If member not found
+        """
+        from app.models.resource import Resource
+        from sqlalchemy.orm import selectinload
+
+        member = await self.get_member_by_id(member_id)
+        if not member:
+            raise ValueError("Member not found")
+
+        # Get all bookings for the member
+        result = await self.db.execute(
+            select(Booking)
+            .where(Booking.member_id == member_id)
+        )
+        all_bookings = result.scalars().all()
+
+        # Initialize counters
+        total_bookings = len(all_bookings)
+        upcoming_bookings = 0
+        completed_bookings = 0
+        cancelled_bookings = 0
+        total_hours = 0.0
+
+        # Facility type counters
+        gym_bookings = 0
+        pitch_bookings = 0
+        clubhouse_bookings = 0
+        ball_wall_bookings = 0
+
+        now = datetime.utcnow()
+
+        # Process each booking
+        for booking in all_bookings:
+            # Count by status
+            if booking.status == BookingStatus.CANCELLED:
+                cancelled_bookings += 1
+            elif booking.status == BookingStatus.CONFIRMED:
+                if booking.start_time > now:
+                    upcoming_bookings += 1
+                elif booking.end_time <= now:
+                    completed_bookings += 1
+                else:
+                    # Currently in progress - count as upcoming
+                    upcoming_bookings += 1
+
+            # Calculate hours (only for confirmed bookings)
+            if booking.status == BookingStatus.CONFIRMED:
+                duration = booking.end_time - booking.start_time
+                total_hours += duration.total_seconds() / 3600
+
+            # Count by facility type (using resource_name from booking)
+            resource_name = ""
+            if hasattr(booking, 'resource_name') and booking.resource_name:
+                resource_name = booking.resource_name.lower()
+
+            if "gym" in resource_name:
+                gym_bookings += 1
+            elif "pitch" in resource_name:
+                pitch_bookings += 1
+            elif "ball wall" in resource_name:
+                ball_wall_bookings += 1
+            elif any(room in resource_name for room in ["changing room", "committee room", "kitchen"]):
+                clubhouse_bookings += 1
+
+        # Calculate membership duration
+        member_since = member.created_at
+        days_as_member = (now - member_since).days
+
+        return {
+            "total_bookings": total_bookings,
+            "upcoming_bookings": upcoming_bookings,
+            "completed_bookings": completed_bookings,
+            "cancelled_bookings": cancelled_bookings,
+            "gym_bookings": gym_bookings,
+            "pitch_bookings": pitch_bookings,
+            "clubhouse_bookings": clubhouse_bookings,
+            "ball_wall_bookings": ball_wall_bookings,
+            "total_hours_booked": round(total_hours, 1),
+            "member_since": member_since,
+            "days_as_member": days_as_member,
+        }
 

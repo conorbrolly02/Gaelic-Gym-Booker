@@ -13,7 +13,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { AreaSelection, AREA_LABELS } from "@/constants/pitches";
-import { pitchApi } from "@/lib/api";
+import { pitchApi, clubhouseApi } from "@/lib/api";
 import RecurringBookingModal, { RecurringBookingData } from "@/components/RecurringBookingModal";
 import { useAuth } from "@/context/AuthContext";
 
@@ -38,7 +38,7 @@ interface PitchAvailability {
 }
 
 export default function PitchBookingBase({ pitchId, pitchName }: PitchBookingBaseProps) {
-  const { isCoach } = useAuth();
+  const { isCoach, isAdmin } = useAuth();
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [selectedArea, setSelectedArea] = useState<AreaSelection>("whole");
   const [availability, setAvailability] = useState<PitchAvailability | null>(null);
@@ -59,6 +59,12 @@ export default function PitchBookingBase({ pitchId, pitchName }: PitchBookingBas
   const [partySize, setPartySize] = useState(1);
   const [submitting, setSubmitting] = useState(false);
 
+  // Changing room state (for coaches/admins only)
+  const [includeChangingRooms, setIncludeChangingRooms] = useState(false);
+  const [selectedChangingRooms, setSelectedChangingRooms] = useState<string[]>([]);
+  const [availableChangingRooms, setAvailableChangingRooms] = useState<any[]>([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
+
   // Custom time state
   const [customStartTime, setCustomStartTime] = useState("");
   const [customEndTime, setCustomEndTime] = useState("");
@@ -69,6 +75,28 @@ export default function PitchBookingBase({ pitchId, pitchName }: PitchBookingBas
     tomorrow.setDate(tomorrow.getDate() + 1);
     setSelectedDate(tomorrow.toISOString().split("T")[0]);
   }, []);
+
+  // Load changing rooms on mount (for coaches/admins)
+  useEffect(() => {
+    async function loadChangingRooms() {
+      if (!isCoach && !isAdmin) return;
+
+      setLoadingRooms(true);
+      try {
+        const rooms = await clubhouseApi.getRooms();
+        // Filter only changing rooms
+        const changingRooms = rooms.filter(room =>
+          room.name.includes("Changing Room") || room.name === "Referee Changing Room"
+        );
+        setAvailableChangingRooms(changingRooms);
+      } catch (err: any) {
+        console.error("Failed to load changing rooms:", err);
+      } finally {
+        setLoadingRooms(false);
+      }
+    }
+    loadChangingRooms();
+  }, [isCoach, isAdmin]);
 
   const fetchAvailability = useCallback(async () => {
     setLoading(true);
@@ -117,6 +145,7 @@ export default function PitchBookingBase({ pitchId, pitchName }: PitchBookingBas
         area: selectedArea,
         booking_type: bookingType,
         party_size: partySize,
+        changing_room_ids: includeChangingRooms && selectedChangingRooms.length > 0 ? selectedChangingRooms : null,
       });
 
       // Success - close modal and refresh availability
@@ -159,6 +188,7 @@ export default function PitchBookingBase({ pitchId, pitchName }: PitchBookingBas
         area: selectedArea,
         booking_type: bookingType,
         party_size: partySize,
+        changing_room_ids: includeChangingRooms && selectedChangingRooms.length > 0 ? selectedChangingRooms : null,
       });
 
       // Show appropriate message based on role
@@ -232,6 +262,7 @@ export default function PitchBookingBase({ pitchId, pitchName }: PitchBookingBas
         area: selectedArea,
         booking_type: bookingType,
         party_size: partySize,
+        changing_room_ids: includeChangingRooms && selectedChangingRooms.length > 0 ? selectedChangingRooms : null,
       });
 
       // Success - close modal and refresh availability
@@ -742,6 +773,62 @@ export default function PitchBookingBase({ pitchId, pitchName }: PitchBookingBas
                   />
                 </div>
 
+                {/* Changing Rooms (Coaches/Admins only) */}
+                {(isCoach || isAdmin) && (
+                  <div className="pt-4 border-t border-gray-200">
+                    <div className="flex items-center mb-3">
+                      <input
+                        type="checkbox"
+                        id="includeChangingRooms"
+                        checked={includeChangingRooms}
+                        onChange={(e) => {
+                          setIncludeChangingRooms(e.target.checked);
+                          if (!e.target.checked) {
+                            setSelectedChangingRooms([]);
+                          }
+                        }}
+                        className="w-4 h-4 text-[#903838] border-gray-300 rounded focus:ring-[#903838]"
+                      />
+                      <label htmlFor="includeChangingRooms" className="ml-2 text-sm font-medium text-gray-700">
+                        Include Changing Rooms
+                      </label>
+                    </div>
+
+                    {includeChangingRooms && (
+                      <div className="pl-6">
+                        <p className="text-xs text-gray-600 mb-2">
+                          Select changing rooms to book alongside this pitch:
+                        </p>
+                        {loadingRooms ? (
+                          <p className="text-sm text-gray-500">Loading rooms...</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {availableChangingRooms.map((room) => (
+                              <label key={room.id} className="flex items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedChangingRooms.includes(room.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedChangingRooms([...selectedChangingRooms, room.id]);
+                                    } else {
+                                      setSelectedChangingRooms(
+                                        selectedChangingRooms.filter((id) => id !== room.id)
+                                      );
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-[#903838] border-gray-300 rounded focus:ring-[#903838]"
+                                />
+                                <span className="ml-2 text-sm text-gray-700">{room.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex gap-3 pt-4">
                   <button
                     type="button"
@@ -931,6 +1018,62 @@ export default function PitchBookingBase({ pitchId, pitchName }: PitchBookingBas
                     placeholder="Any additional information..."
                   />
                 </div>
+
+                {/* Changing Rooms (Coaches/Admins only) - Custom Time Modal */}
+                {(isCoach || isAdmin) && (
+                  <div className="pt-4 border-t border-gray-200">
+                    <div className="flex items-center mb-3">
+                      <input
+                        type="checkbox"
+                        id="includeChangingRoomsCustom"
+                        checked={includeChangingRooms}
+                        onChange={(e) => {
+                          setIncludeChangingRooms(e.target.checked);
+                          if (!e.target.checked) {
+                            setSelectedChangingRooms([]);
+                          }
+                        }}
+                        className="w-4 h-4 text-[#903838] border-gray-300 rounded focus:ring-[#903838]"
+                      />
+                      <label htmlFor="includeChangingRoomsCustom" className="ml-2 text-sm font-medium text-gray-700">
+                        Include Changing Rooms
+                      </label>
+                    </div>
+
+                    {includeChangingRooms && (
+                      <div className="pl-6">
+                        <p className="text-xs text-gray-600 mb-2">
+                          Select changing rooms to book alongside this pitch:
+                        </p>
+                        {loadingRooms ? (
+                          <p className="text-sm text-gray-500">Loading rooms...</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {availableChangingRooms.map((room) => (
+                              <label key={room.id} className="flex items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedChangingRooms.includes(room.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedChangingRooms([...selectedChangingRooms, room.id]);
+                                    } else {
+                                      setSelectedChangingRooms(
+                                        selectedChangingRooms.filter((id) => id !== room.id)
+                                      );
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-[#903838] border-gray-300 rounded focus:ring-[#903838]"
+                                />
+                                <span className="ml-2 text-sm text-gray-700">{room.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex gap-3 pt-4">
                   <button

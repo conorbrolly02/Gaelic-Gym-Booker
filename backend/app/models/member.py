@@ -43,6 +43,7 @@ class Member(Base):
         user_id: Foreign key to the associated User
         full_name: Member's full name
         phone: Optional phone number
+        qr_code: Optional QR code for gym access
         membership_status: Current status (pending/active/suspended)
         approved_by: Admin who approved this member
         approved_at: When the member was approved
@@ -84,7 +85,14 @@ class Member(Base):
         nullable=True,
         comment="Contact phone number"
     )
-    
+
+    # QR code for gym access (stored as base64 or URL)
+    qr_code = Column(
+        String(5000),  # Large enough for base64 image data
+        nullable=True,
+        comment="QR code for gym access"
+    )
+
     # Membership approval status
     # New members are 'pending' until admin approves
     membership_status = Column(

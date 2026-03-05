@@ -55,6 +55,43 @@ export default function DashboardPage() {
   // Facility selection modal
   const [showFacilityModal, setShowFacilityModal] = useState(false);
 
+  // ------------------------------- HELPERS -----------------------------------
+  /**
+   * Group clubhouse bookings that were created together (multi-room bookings).
+   * Bookings with same start_time, end_time, and member_id are merged into one,
+   * combining room names with " + " separator.
+   */
+  const groupClubhouseBookings = useCallback((bookings: Booking[]): Booking[] => {
+    const grouped: { [key: string]: Booking } = {};
+
+    bookings.forEach(booking => {
+      // Only group clubhouse bookings (those with changing rooms, committee room, etc.)
+      const isClubhouseBooking = booking.resource_name &&
+        (booking.resource_name.toLowerCase().includes('changing room') ||
+         booking.resource_name.toLowerCase().includes('committee room') ||
+         booking.resource_name.toLowerCase().includes('kitchen'));
+
+      if (isClubhouseBooking) {
+        // Create unique key for bookings that should be grouped together
+        const groupKey = `${booking.member_id}_${booking.start_time}_${booking.end_time}`;
+
+        if (grouped[groupKey]) {
+          // Merge room names
+          grouped[groupKey].resource_name = `${grouped[groupKey].resource_name} + ${booking.resource_name}`;
+        } else {
+          // First booking in this group - clone it
+          grouped[groupKey] = { ...booking };
+        }
+      } else {
+        // Non-clubhouse bookings - keep as-is with unique key
+        const uniqueKey = `${booking.id}`;
+        grouped[uniqueKey] = booking;
+      }
+    });
+
+    return Object.values(grouped);
+  }, []);
+
   // ------------------------------- DATA FETCH --------------------------------
   const fetchUpcoming = useCallback(async () => {
     try {
@@ -71,8 +108,17 @@ export default function DashboardPage() {
       // Combine all bookings
       const allBookings = [...gymBookings, ...pitchBookings, ...clubhouseBookings];
 
-      // Filter for upcoming only (end_time >= now)
-      const upcoming = allBookings.filter(b => new Date(b.end_time).getTime() >= Date.now());
+      // Group clubhouse multi-room bookings to prevent duplication
+      const groupedBookings = groupClubhouseBookings(allBookings);
+
+      // Filter for upcoming only (start_time >= now OR currently in progress)
+      const now = Date.now();
+      const upcoming = groupedBookings.filter(b => {
+        const startTime = new Date(b.start_time).getTime();
+        const endTime = new Date(b.end_time).getTime();
+        // Show if hasn't started yet, OR if currently in progress
+        return startTime >= now || (startTime < now && endTime >= now);
+      });
 
       // Sort: soonest first by start_time
       const sorted = upcoming.sort(
@@ -84,7 +130,7 @@ export default function DashboardPage() {
     } finally {
       setLoadingUpcoming(false);
     }
-  }, []);
+  }, [groupClubhouseBookings]);
 
   const fetchPast = useCallback(async () => {
     try {
@@ -101,8 +147,12 @@ export default function DashboardPage() {
       // Combine all bookings
       const allBookings = [...gymBookings, ...pitchBookings, ...clubhouseBookings];
 
-      // Filter for past only (end_time < now)
-      const past = allBookings.filter(b => new Date(b.end_time).getTime() < Date.now());
+      // Group clubhouse multi-room bookings to prevent duplication
+      const groupedBookings = groupClubhouseBookings(allBookings);
+
+      // Filter for past only (end_time < now - booking has fully completed)
+      const now = Date.now();
+      const past = groupedBookings.filter(b => new Date(b.end_time).getTime() < now);
 
       // Sort: most recent past first by start_time
       const sorted = past
@@ -114,7 +164,7 @@ export default function DashboardPage() {
     } finally {
       setLoadingPast(false);
     }
-  }, []);
+  }, [groupClubhouseBookings]);
 
   useEffect(() => {
     fetchUpcoming();
@@ -235,7 +285,7 @@ export default function DashboardPage() {
   };
 
   // ------------------------------ RENDER UTILS -------------------------------
-  /** Row for a single booking (keeps your original visual style) */
+  /** Row for a single booking - mobile-optimized compact design */
   const BookingRow: React.FC<{ booking: Booking }> = ({ booking }) => {
     const { date, time } = formatDateTime(booking.start_time);
     const endTime = formatDateTime(booking.end_time).time;
@@ -250,50 +300,67 @@ export default function DashboardPage() {
     return (
       <div
         key={booking.id}
-        className={`flex items-center gap-4 p-3 rounded-lg border ${
+        className={`rounded-lg border p-2.5 sm:p-3 ${
           today ? "border-primary-200 bg-primary-50" : "border-gray-200 bg-gray-50"
         }`}
       >
-        {/* Date indicator with month and day */}
-        <div className={`text-center min-w-[70px] ${today ? "text-primary-700" : "text-gray-600"}`}>
-          <div className="text-xs font-medium uppercase">{weekday}</div>
-          <div className="text-sm font-semibold">{monthDay}</div>
-          <div className="text-xs text-gray-500">{year}</div>
-        </div>
+        {/* Mobile: Stacked layout, Desktop: Side-by-side */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+          {/* Date & Time Section - Compact on mobile */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Compact date indicator */}
+            <div className={`text-center min-w-[50px] sm:min-w-[60px] ${today ? "text-primary-700" : "text-gray-600"}`}>
+              <div className="text-[10px] sm:text-xs font-medium uppercase leading-tight">{weekday}</div>
+              <div className="text-xs sm:text-sm font-semibold leading-tight">{monthDay}</div>
+              <div className="text-[9px] sm:text-xs text-gray-500 leading-tight">{year}</div>
+            </div>
 
-        {/* Divider */}
-        <div className={`w-px h-10 ${today ? "bg-primary-200" : "bg-gray-300"}`} />
+            {/* Divider - hidden on mobile */}
+            <div className={`hidden sm:block w-px h-10 ${today ? "bg-primary-200" : "bg-gray-300"}`} />
 
-        {/* Time & details */}
-        <div className="flex-1">
-          <div className="font-medium text-gray-900">
-            {time} - {endTime}
+            {/* Time */}
+            <div className="flex-1 sm:flex-none">
+              <div className="font-medium text-sm sm:text-base text-gray-900">
+                {time} - {endTime}
+              </div>
+            </div>
           </div>
-          {/* Facility name with color badge */}
-          {booking.resource_name ? (
-            <div className="mt-1">
-              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getFacilityBadgeColor(booking)}`}>
-                {booking.resource_name}
+
+          {/* Details Section */}
+          <div className="flex-1 min-w-0">
+            {/* Facility name with color badge */}
+            {booking.resource_name ? (
+              <div className="mb-1">
+                <span className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold ${getFacilityBadgeColor(booking)} break-words`}>
+                  {booking.resource_name}
+                </span>
+              </div>
+            ) : null}
+
+            {/* Team/Requester info */}
+            {(booking.team_name || booking.requester_name) && (
+              <div className="text-[11px] sm:text-xs text-gray-600 truncate">
+                {booking.team_name && <span className="font-medium">{booking.team_name}</span>}
+                {booking.team_name && booking.requester_name && <span className="mx-1">·</span>}
+                {booking.requester_name && <span>{booking.requester_name}</span>}
+              </div>
+            )}
+
+            {/* Today badge */}
+            {today && (
+              <span className="inline-block mt-1 px-2 py-0.5 bg-primary-100 text-primary-700 text-[10px] sm:text-xs font-medium rounded-full">
+                Today
               </span>
-            </div>
-          ) : null}
-          {/* Team/Requester info */}
-          {(booking.team_name || booking.requester_name) && (
-            <div className="mt-1 text-xs text-gray-600">
-              {booking.team_name && <span className="font-medium">{booking.team_name}</span>}
-              {booking.team_name && booking.requester_name && <span className="mx-1">·</span>}
-              {booking.requester_name && <span>{booking.requester_name}</span>}
-            </div>
-          )}
-          {today && (
-            <span className="inline-block mt-1 px-2 py-0.5 bg-primary-100 text-primary-700 text-xs font-medium rounded-full">
-              Today
+            )}
+          </div>
+
+          {/* Status badge - Smaller on mobile, hidden if confirmed */}
+          {booking.status !== "CONFIRMED" && (
+            <span className="self-start sm:self-center badge badge-success text-[10px] sm:text-xs px-1.5 py-0.5 sm:px-2 sm:py-1">
+              {booking.status}
             </span>
           )}
         </div>
-
-        {/* Status badge */}
-        <span className="badge badge-success">{booking.status}</span>
       </div>
     );
   };
@@ -353,7 +420,7 @@ export default function DashboardPage() {
           <span className="text-sm font-medium text-gray-900">View Schedule</span>
         </Link>
 
-        {/* Admin (only for admins) */}
+        {/* Profile or Admin */}
         {isAdmin ? (
           <Link
             href="/dashboard/admin"
@@ -373,14 +440,17 @@ export default function DashboardPage() {
             <span className="text-sm font-medium text-gray-900">Admin</span>
           </Link>
         ) : (
-          <div className="card flex flex-col items-center text-center p-4 bg-gray-50 opacity-50">
-            <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center mb-3">
-              <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <Link
+            href="/dashboard/profile"
+            className="card hover:shadow-md transition-shadow flex flex-col items-center text-center p-4"
+          >
+            <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mb-3">
+              <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
             </div>
-            <span className="text-sm font-medium text-gray-400">Profile</span>
-          </div>
+            <span className="text-sm font-medium text-gray-900">Profile</span>
+          </Link>
         )}
       </div>
 
@@ -716,28 +786,75 @@ export default function DashboardPage() {
                 </svg>
               </button>
 
-              {/* Pitches - Only for Coaches and Admins */}
+              {/* Pitches & Ball Wall - Only for Coaches and Admins */}
               {(isCoach || isAdmin) && (
-                <button
-                  onClick={() => {
-                    setShowFacilityModal(false);
-                    router.push("/dashboard/pitches");
-                  }}
-                  className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all group"
-                >
-                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
-                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                <>
+                  {/* Main Pitch */}
+                  <button
+                    onClick={() => {
+                      setShowFacilityModal(false);
+                      router.push("/dashboard/pitches/main");
+                    }}
+                    className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                      <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 text-left">
+                      <h4 className="font-semibold text-gray-900">Main Pitch</h4>
+                      <p className="text-sm text-gray-600">Book main pitch time slots</p>
+                    </div>
+                    <svg className="w-5 h-5 text-gray-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
-                  </div>
-                  <div className="flex-1 text-left">
-                    <h4 className="font-semibold text-gray-900">Pitches & Ball Wall</h4>
-                    <p className="text-sm text-gray-600">Book pitch or ball wall time</p>
-                  </div>
-                  <svg className="w-5 h-5 text-gray-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
+                  </button>
+
+                  {/* Minor Pitch */}
+                  <button
+                    onClick={() => {
+                      setShowFacilityModal(false);
+                      router.push("/dashboard/pitches/minor");
+                    }}
+                    className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                      <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 text-left">
+                      <h4 className="font-semibold text-gray-900">Minor Pitch</h4>
+                      <p className="text-sm text-gray-600">Book minor pitch time slots</p>
+                    </div>
+                    <svg className="w-5 h-5 text-gray-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+
+                  {/* Ball Wall */}
+                  <button
+                    onClick={() => {
+                      setShowFacilityModal(false);
+                      router.push("/dashboard/ball-wall");
+                    }}
+                    className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                      <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 text-left">
+                      <h4 className="font-semibold text-gray-900">Ball Wall</h4>
+                      <p className="text-sm text-gray-600">Book ball wall practice time</p>
+                    </div>
+                    <svg className="w-5 h-5 text-gray-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </>
               )}
 
               {/* Clubhouse */}

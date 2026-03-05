@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.booking import Booking, BookingStatus
 from app.models.resource import Resource, ResourceType
 from app.models.member import Member
+from app.models.user import UserRole
 
 
 class ClubhouseService:
@@ -61,11 +62,11 @@ class ClubhouseService:
         Returns:
             (is_available, conflicting_bookings)
         """
-        # Find overlapping bookings for this room
+        # Find overlapping bookings for this room (both CONFIRMED and PENDING_APPROVAL)
         query = select(Booking).where(
             and_(
                 Booking.resource_id == room_id,
-                Booking.status == BookingStatus.CONFIRMED,
+                Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.PENDING_APPROVAL]),
                 Booking.start_time < end_time,
                 Booking.end_time > start_time
             )
@@ -107,7 +108,8 @@ class ClubhouseService:
         end_time: datetime,
         purpose: str,
         contact_name: str | None,
-        created_by: UUID
+        created_by: UUID,
+        user_role: UserRole | None = None
     ) -> List[Booking]:
         """
         Create bookings for multiple rooms at once.
@@ -122,12 +124,19 @@ class ClubhouseService:
             purpose: Purpose/description of the booking
             contact_name: Contact person name (optional)
             created_by: User creating the booking
+            user_role: User role for determining approval status
 
         Returns:
             List of created Booking objects
 
         Raises:
             ValueError: If any room is unavailable or doesn't exist
+
+        Note:
+            Booking status is set based on user role:
+            - ADMIN: Always CONFIRMED
+            - COACH: PENDING_APPROVAL for clubhouse rooms
+            - MEMBER: CONFIRMED (members can book without approval)
         """
         # Validate time range
         if end_time <= start_time:
@@ -165,6 +174,16 @@ class ClubhouseService:
                 f"The following rooms are not available: {', '.join(room_names)}"
             )
 
+        # Determine booking status based on user role
+        # Coaches need approval for clubhouse rooms
+        # Admins are auto-approved
+        # Members are auto-approved for clubhouse rooms
+        if user_role == UserRole.COACH:
+            booking_status = BookingStatus.PENDING_APPROVAL
+        else:
+            # Admin or Member (defaults to confirmed)
+            booking_status = BookingStatus.CONFIRMED
+
         # Create bookings for all rooms
         bookings = []
         for room_id in room_ids:
@@ -173,7 +192,7 @@ class ClubhouseService:
                 resource_id=room_id,
                 start_time=start_time,
                 end_time=end_time,
-                status=BookingStatus.CONFIRMED,
+                status=booking_status,
                 booking_type="SINGLE",  # Clubhouse bookings don't use party_size
                 party_size=1,
                 notes=purpose,  # Store purpose in notes field

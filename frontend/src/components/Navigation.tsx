@@ -43,7 +43,7 @@ export default function Navigation() {
   // ---------------------------------------------------------------------------
   // AUTH & ROUTING CONTEXT
   // ---------------------------------------------------------------------------
-  const { user, member, isAdmin, isCoach, isMember, logout } = useAuth();
+  const { user, member, isAdmin, isCoach, isMember, isAuthenticated, isLoading, logout } = useAuth();
   const pathname = usePathname();
 
   // Display name for the header (never show email here)
@@ -73,22 +73,27 @@ export default function Navigation() {
 
   // Fetch pending approvals count for admins
   useEffect(() => {
-    if (isAdmin) {
+    // Only fetch if user is authenticated, not loading, and is an admin
+    if (isAuthenticated && !isLoading && isAdmin) {
       fetchPendingApprovalsCount();
       // Refresh count every 30 seconds
       const interval = setInterval(fetchPendingApprovalsCount, 30000);
       return () => clearInterval(interval);
     }
-  }, [isAdmin]);
+  }, [isAuthenticated, isLoading, isAdmin]);
 
   const fetchPendingApprovalsCount = async () => {
-    if (!isAdmin) return;
+    // Triple check authentication before making API call
+    if (!isAuthenticated || isLoading || !isAdmin) return;
+
     try {
       const data = await adminApi.getPendingApprovals();
       const count = data.pending_members.length + data.pending_bookings.length;
       setPendingApprovalsCount(count);
     } catch (error) {
       console.error("Failed to fetch pending approvals count:", error);
+      // Reset count on error to avoid showing stale data
+      setPendingApprovalsCount(0);
     }
   };
 

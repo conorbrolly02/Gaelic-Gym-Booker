@@ -57,10 +57,28 @@ export interface Member {
   phone?: string;
   email?: string;
   role?: UserRole;
+  qr_code?: string;
   membership_status: MembershipStatus;
   joined_at: string;
   approved_at?: string;
   approved_by?: string;
+}
+
+/**
+ * Member analytics data
+ */
+export interface MemberAnalytics {
+  total_bookings: number;
+  upcoming_bookings: number;
+  completed_bookings: number;
+  cancelled_bookings: number;
+  gym_bookings: number;
+  pitch_bookings: number;
+  clubhouse_bookings: number;
+  ball_wall_bookings: number;
+  total_hours_booked: number;
+  member_since: string;
+  days_as_member: number;
 }
 
 /**
@@ -91,6 +109,7 @@ export interface Booking {
   cancelled_by?: string;
   cancelled_at?: string;
   created_at: string;
+  version?: number;        // For optimistic locking when editing
   // Pitch/Ball Wall booking specific fields
   title?: string;          // Booking title/description
   requester_name?: string; // Name of person requesting the booking
@@ -211,6 +230,27 @@ export interface CreateBookingRequest {
   end_time: string;
   booking_type?: string;
   party_size?: number;
+}
+
+/**
+ * Edit scope for recurring bookings
+ * - THIS: Edit only this specific booking
+ * - FUTURE: Edit this and all future bookings in the series
+ * - ALL: Edit all bookings in the series
+ */
+export type EditScope = "THIS" | "FUTURE" | "ALL";
+
+/**
+ * Edit booking request
+ */
+export interface EditBookingRequest {
+  version: number;
+  resource_id?: string;
+  start_time?: string;
+  end_time?: string;
+  party_size?: number;
+  scope?: EditScope;
+  reason?: string;
 }
 
 /**

@@ -32,7 +32,7 @@ class MemberCreate(BaseModel):
 class MemberUpdate(BaseModel):
     """
     Schema for updating member profile.
-    
+
     All fields are optional - only provided fields are updated.
     """
     full_name: Optional[str] = Field(
@@ -46,6 +46,11 @@ class MemberUpdate(BaseModel):
         max_length=20,
         description="Updated phone number"
     )
+    qr_code: Optional[str] = Field(
+        None,
+        max_length=5000,
+        description="QR code for gym access (base64 or URL)"
+    )
 
 
 class MemberResponse(BaseModel):
@@ -56,11 +61,12 @@ class MemberResponse(BaseModel):
     user_id: UUID
     full_name: str
     phone: Optional[str]
+    qr_code: Optional[str]
     membership_status: str
     approved_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = {
         "from_attributes": True
     }
@@ -97,3 +103,27 @@ class MemberStats(BaseModel):
     membership_status: str
     total_bookings: int
     upcoming_bookings: int
+
+
+class MemberAnalytics(BaseModel):
+    """
+    Detailed analytics about a member's booking history.
+    Used in the member profile page.
+    """
+    total_bookings: int = Field(description="Total number of bookings made")
+    upcoming_bookings: int = Field(description="Number of upcoming bookings")
+    completed_bookings: int = Field(description="Number of completed bookings")
+    cancelled_bookings: int = Field(description="Number of cancelled bookings")
+
+    # Bookings by facility type
+    gym_bookings: int = Field(default=0, description="Number of gym bookings")
+    pitch_bookings: int = Field(default=0, description="Number of pitch bookings")
+    clubhouse_bookings: int = Field(default=0, description="Number of clubhouse bookings")
+    ball_wall_bookings: int = Field(default=0, description="Number of ball wall bookings")
+
+    # Time-based stats
+    total_hours_booked: float = Field(default=0.0, description="Total hours booked across all facilities")
+
+    # Membership info
+    member_since: datetime = Field(description="Member registration date")
+    days_as_member: int = Field(description="Number of days since registration")

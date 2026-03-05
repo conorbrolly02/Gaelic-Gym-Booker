@@ -263,7 +263,13 @@ class PitchBookingService:
         # Determine status for each slot
         availability_slots = []
 
+        # Get current time in UTC for filtering past slots
+        now_utc = datetime.now(zoneinfo.ZoneInfo("UTC"))
+
         for slot_start, slot_end in slots_list:
+            # Skip slots that are in the past
+            if slot_end <= now_utc:
+                continue
             overlapping = [
                 b for b in bookings
                 if overlaps(slot_start, slot_end, b.start_time, b.end_time)
@@ -397,7 +403,7 @@ class PitchBookingService:
             # Admin or no role specified (defaults to confirmed)
             booking_status = BookingStatus.CONFIRMED
 
-        # 6. Create booking
+        # 6. Create pitch booking
         new_booking = Booking(
             member_id=final_member_id,
             resource_id=data.pitch_id,
@@ -417,5 +423,54 @@ class PitchBookingService:
         self.db.add(new_booking)
         await self.db.commit()
         await self.db.refresh(new_booking)
+
+        # 7. Create changing room bookings if provided
+        if data.changing_room_ids and len(data.changing_room_ids) > 0:
+            for room_id in data.changing_room_ids:
+                # Verify changing room exists
+                result = await self.db.execute(
+                    select(Resource)
+                    .where(Resource.id == room_id)
+                    .where(Resource.type == ResourceType.ROOM)
+                    .where(Resource.is_active == True)
+                )
+                room = result.scalar_one_or_none()
+
+                if not room:
+                    # Skip invalid rooms silently or log warning
+                    continue
+
+                # Check for conflicts with this changing room
+                result = await self.db.execute(
+                    select(Booking)
+                    .where(Booking.resource_id == room_id)
+                    .where(Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.PENDING_APPROVAL]))
+                    .where(Booking.start_time < data.end)
+                    .where(Booking.end_time > data.start)
+                )
+                existing = result.scalar_one_or_none()
+
+                if existing:
+                    # Skip if room already booked (could also raise error)
+                    continue
+
+                # Create changing room booking
+                room_booking = Booking(
+                    member_id=final_member_id,
+                    resource_id=room_id,
+                    start_time=data.start,
+                    end_time=data.end,
+                    status=booking_status,  # Same status as pitch booking
+                    booking_type=data.booking_type,
+                    party_size=data.party_size,
+                    title=f"{data.title} - {room.name}",
+                    requester_name=data.requester_name,
+                    team_name=data.team_name,
+                    notes=f"Booked alongside {pitch.name}. {data.notes or ''}".strip(),
+                    created_by=created_by_user_id
+                )
+                self.db.add(room_booking)
+
+            await self.db.commit()
 
         return new_booking

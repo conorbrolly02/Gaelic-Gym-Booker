@@ -725,18 +725,25 @@ class BookingService:
             List of slot availability dicts
         """
         slots = []
-        
+
+        # Get current time to filter out past slots
+        now = datetime.now()
+
         # Generate hourly slots for the day
         for hour in range(24):
             start = datetime.combine(check_date, time(hour, 0))
             end = datetime.combine(check_date, time(hour, 59, 59))
-            
+
+            # Skip slots that are in the past
+            if end < now:
+                continue
+
             # Make timezone-aware if needed
             # (In production, handle timezone properly)
-            
+
             # Count bookings in this hour
             count = await self.count_overlapping_bookings(start, end)
-            
+
             slots.append({
                 "start_time": start,
                 "end_time": end,
@@ -744,7 +751,7 @@ class BookingService:
                 "available": settings.GYM_MAX_CAPACITY - count,
                 "max_capacity": settings.GYM_MAX_CAPACITY,
             })
-        
+
         return slots
     
     async def create_recurring_pattern(

@@ -25,13 +25,14 @@ type FilterType = "upcoming" | "past" | "all";
 export default function MyBookingsPage() {
   // Bookings data
   const [bookings, setBookings] = useState<Booking[]>([]);
-  
+
   // Filter state
   const [filter, setFilter] = useState<FilterType>("upcoming");
-  
+
   // UI state
   const [isLoading, setIsLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -72,6 +73,23 @@ export default function MyBookingsPage() {
   }, [fetchBookings]);
 
   /**
+   * Handle editing a booking
+   */
+  const handleEdit = (booking: Booking) => {
+    setEditingBooking(booking);
+  };
+
+  /**
+   * Handle booking updated after edit
+   */
+  const handleBookingUpdated = async (updatedBooking: Booking) => {
+    setSuccess("Booking updated successfully");
+    setEditingBooking(null);
+    // Refresh bookings to show updated data
+    await fetchBookings();
+  };
+
+  /**
    * Handle cancelling a booking
    */
   const handleCancel = async (bookingId: string) => {
@@ -86,7 +104,7 @@ export default function MyBookingsPage() {
     try {
       await bookingApi.cancelBooking(bookingId);
       setSuccess("Booking cancelled successfully");
-      
+
       // Refresh bookings
       await fetchBookings();
     } catch (err: any) {
@@ -120,7 +138,17 @@ export default function MyBookingsPage() {
    */
   const canCancel = (booking: Booking) => {
     return (
-      booking.status === "CONFIRMED" && 
+      booking.status === "CONFIRMED" &&
+      new Date(booking.start_time) > new Date()
+    );
+  };
+
+  /**
+   * Check if booking can be edited (is in the future and confirmed)
+   */
+  const canEdit = (booking: Booking) => {
+    return (
+      booking.status === "CONFIRMED" &&
       new Date(booking.start_time) > new Date()
     );
   };
@@ -285,16 +313,26 @@ export default function MyBookingsPage() {
                           </span>
                         </td>
                         <td className="py-4 px-4 text-right">
-                          {canCancel(booking) && (
-                            <button
-                              onClick={() => handleCancel(booking.id)}
-                              disabled={cancellingId === booking.id}
-                              className="text-red-600 hover:text-red-700 font-medium text-sm
-                                         disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {cancellingId === booking.id ? "Cancelling..." : "Cancel"}
-                            </button>
-                          )}
+                          <div className="flex justify-end gap-2">
+                            {canEdit(booking) && (
+                              <button
+                                onClick={() => handleEdit(booking)}
+                                className="text-blue-600 hover:text-blue-700 font-medium text-sm"
+                              >
+                                Edit
+                              </button>
+                            )}
+                            {canCancel(booking) && (
+                              <button
+                                onClick={() => handleCancel(booking.id)}
+                                disabled={cancellingId === booking.id}
+                                className="text-red-600 hover:text-red-700 font-medium text-sm
+                                           disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {cancellingId === booking.id ? "Cancelling..." : "Cancel"}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -346,16 +384,30 @@ export default function MyBookingsPage() {
                       </span>
                     </div>
 
-                    {canCancel(booking) && (
-                      <button
-                        onClick={() => handleCancel(booking.id)}
-                        disabled={cancellingId === booking.id}
-                        className="mt-3 w-full py-2 text-red-600 border border-red-200
-                                   rounded-lg text-sm font-medium hover:bg-red-50
-                                   disabled:opacity-50 transition-colors"
-                      >
-                        {cancellingId === booking.id ? "Cancelling..." : "Cancel Booking"}
-                      </button>
+                    {(canEdit(booking) || canCancel(booking)) && (
+                      <div className="mt-3 flex gap-2">
+                        {canEdit(booking) && (
+                          <button
+                            onClick={() => handleEdit(booking)}
+                            className="flex-1 py-2 text-blue-600 border border-blue-200
+                                       rounded-lg text-sm font-medium hover:bg-blue-50
+                                       transition-colors"
+                          >
+                            Edit
+                          </button>
+                        )}
+                        {canCancel(booking) && (
+                          <button
+                            onClick={() => handleCancel(booking.id)}
+                            disabled={cancellingId === booking.id}
+                            className="flex-1 py-2 text-red-600 border border-red-200
+                                       rounded-lg text-sm font-medium hover:bg-red-50
+                                       disabled:opacity-50 transition-colors"
+                          >
+                            {cancellingId === booking.id ? "Cancelling..." : "Cancel"}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 );
@@ -364,6 +416,15 @@ export default function MyBookingsPage() {
           </>
         )}
       </div>
+
+      {/* Edit Booking Modal */}
+      {editingBooking && (
+        <EditBookingModal
+          booking={editingBooking}
+          onClose={() => setEditingBooking(null)}
+          onUpdated={handleBookingUpdated}
+        />
+      )}
     </div>
   );
 }

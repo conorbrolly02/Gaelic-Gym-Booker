@@ -136,6 +136,14 @@ class Booking(Base):
         comment="Number of people included in this booking"
     )
 
+    # Version - for optimistic locking when editing bookings
+    version = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment="Version number for optimistic locking"
+    )
+
     # Area - for pitch bookings only
     # Valid values: "whole", "half-left", "half-right",
     #               "quarter-tl", "quarter-tr", "quarter-bl", "quarter-br"

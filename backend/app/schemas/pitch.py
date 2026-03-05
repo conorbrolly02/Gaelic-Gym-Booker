@@ -119,6 +119,7 @@ class PitchBookingIn(BaseModel):
         booking_type: Type of booking (SINGLE or TEAM)
         party_size: Number of people (1-20)
         member_id: Optional member_id (for admin booking on behalf)
+        changing_room_ids: Optional list of changing room IDs to book alongside the pitch
     """
     pitch_id: UUID
     start: datetime
@@ -131,6 +132,7 @@ class PitchBookingIn(BaseModel):
     booking_type: Literal["SINGLE", "TEAM"] = Field(default="SINGLE", description="Booking type")
     party_size: int = Field(default=1, ge=1, le=20, description="Number of people (1-20)")
     member_id: Optional[UUID] = Field(None, description="Member ID (for admin use)")
+    changing_room_ids: Optional[List[UUID]] = Field(default=None, description="Optional changing room IDs to book alongside pitch (coaches/admins only)")
 
     @field_validator('end')
     @classmethod
@@ -260,6 +262,7 @@ class RecurringPitchBookingIn(BaseModel):
     area: AreaSelection = Field(default="whole", description="Area of pitch to book")
     booking_type: Literal["SINGLE", "TEAM"] = Field(default="SINGLE")
     party_size: int = Field(default=1, ge=1, le=20)
+    changing_room_ids: Optional[List[UUID]] = Field(default=None, description="Optional changing room IDs to book alongside pitch (coaches/admins only)")
 
     @field_validator('pattern_type')
     @classmethod
