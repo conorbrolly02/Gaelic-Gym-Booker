@@ -252,7 +252,20 @@ export default function ClubhousePage() {
             </ol>
           </div>
 
-          {/* Selected Rooms Summary */}
+          {/* Floor Plan Card */}
+          <div className="card">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Clubhouse Floor Plan
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Click on rooms to select them for booking. You can select multiple rooms.
+            </p>
+            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+              <ClubhousePlan onRoomSelect={handleRoomSelect} selectedRooms={selectedRooms} />
+            </div>
+          </div>
+
+          {/* Selected Rooms Summary - Moved below floor plan */}
           {selectedRooms.length > 0 && (
             <div className="card bg-blue-50 border-blue-200">
               <h3 className="text-sm font-semibold text-blue-900 mb-2">
@@ -284,19 +297,6 @@ export default function ClubhousePage() {
               </div>
             </div>
           )}
-
-          {/* Floor Plan Card */}
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Clubhouse Floor Plan
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Click on rooms to select them for booking. You can select multiple rooms.
-            </p>
-            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-              <ClubhousePlan onRoomSelect={handleRoomSelect} selectedRooms={selectedRooms} />
-            </div>
-          </div>
 
           {/* Action Buttons */}
           <div className="flex gap-3">

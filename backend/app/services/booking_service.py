@@ -608,11 +608,12 @@ class BookingService:
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         page: int = 1,
-        limit: int = 20
+        limit: int = 20,
+        gym_only: bool = False
     ) -> Tuple[List[Booking], int]:
         """
         List bookings for a specific member.
-        
+
         Args:
             member_id: The member whose bookings to list
             status: Optional status filter
@@ -620,35 +621,41 @@ class BookingService:
             to_date: Optional end date filter
             page: Page number (1-indexed)
             limit: Items per page
-            
+            gym_only: If True, only return gym bookings (resource_id is NULL)
+
         Returns:
             Tuple of (list of bookings, total count)
         """
         # Base query
         query = select(Booking).where(Booking.member_id == member_id)
         count_query = select(func.count(Booking.id)).where(Booking.member_id == member_id)
-        
+
+        # Filter for gym bookings only (resource_id is NULL)
+        if gym_only:
+            query = query.where(Booking.resource_id.is_(None))
+            count_query = count_query.where(Booking.resource_id.is_(None))
+
         # Apply filters
         if status:
             query = query.where(Booking.status == status)
             count_query = count_query.where(Booking.status == status)
-        
+
         if from_date:
             query = query.where(Booking.start_time >= from_date)
             count_query = count_query.where(Booking.start_time >= from_date)
-        
+
         if to_date:
             query = query.where(Booking.end_time <= to_date)
             count_query = count_query.where(Booking.end_time <= to_date)
-        
+
         # Get total count
         total_result = await self.db.execute(count_query)
         total = total_result.scalar()
-        
+
         # Apply pagination and ordering
         offset = (page - 1) * limit
         query = query.offset(offset).limit(limit).order_by(Booking.start_time.desc())
-        
+
         result = await self.db.execute(query)
         bookings = result.scalars().all()
         

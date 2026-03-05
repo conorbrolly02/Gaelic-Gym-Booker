@@ -88,7 +88,7 @@ class Member(Base):
 
     # QR code for gym access (stored as base64 or URL)
     qr_code = Column(
-        String(5000),  # Large enough for base64 image data
+        String(100000),  # Large enough for base64 image data (up to ~75KB image)
         nullable=True,
         comment="QR code for gym access"
     )

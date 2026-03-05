@@ -48,7 +48,7 @@ class MemberUpdate(BaseModel):
     )
     qr_code: Optional[str] = Field(
         None,
-        max_length=5000,
+        max_length=100000,
         description="QR code for gym access (base64 or URL)"
     )
 

@@ -37,6 +37,47 @@ export default function MyBookingsPage() {
   const [success, setSuccess] = useState<string | null>(null);
 
   /**
+   * Group clubhouse bookings that were created together (multi-room bookings).
+   * Prevents showing duplicate entries for the same booking.
+   */
+  const groupClubhouseBookings = useCallback((bookings: Booking[]): Booking[] => {
+    const grouped: { [key: string]: Booking } = {};
+
+    bookings.forEach(booking => {
+      // Only group clubhouse bookings (those with changing rooms, committee room, etc.)
+      const isClubhouseBooking = booking.resource_name &&
+        (booking.resource_name.toLowerCase().includes('changing room') ||
+         booking.resource_name.toLowerCase().includes('committee room') ||
+         booking.resource_name.toLowerCase().includes('kitchen'));
+
+      if (isClubhouseBooking) {
+        // Create unique key for bookings that should be grouped together
+        const groupKey = `${booking.member_id}_${booking.start_time}_${booking.end_time}`;
+
+        if (grouped[groupKey]) {
+          // Merge room names - but avoid duplicates
+          const existingRooms = grouped[groupKey].resource_name?.split(' + ') || [];
+          const newRoom = booking.resource_name || '';
+
+          // Only add if this room isn't already in the list
+          if (!existingRooms.includes(newRoom)) {
+            grouped[groupKey].resource_name = `${grouped[groupKey].resource_name} + ${newRoom}`;
+          }
+        } else {
+          // First booking in this group - clone it
+          grouped[groupKey] = { ...booking };
+        }
+      } else {
+        // Non-clubhouse bookings - keep as-is with unique key
+        const uniqueKey = `${booking.id}`;
+        grouped[uniqueKey] = booking;
+      }
+    });
+
+    return Object.values(grouped);
+  }, []);
+
+  /**
    * Fetch bookings based on current filter
    */
   const fetchBookings = useCallback(async () => {
@@ -44,6 +85,7 @@ export default function MyBookingsPage() {
     setError(null);
 
     try {
+      const now = new Date();
       let params: { upcoming?: boolean; status?: string } = {};
 
       if (filter === "upcoming") {
@@ -53,19 +95,26 @@ export default function MyBookingsPage() {
 
       const data = await bookingApi.getBookings(params);
 
-      // Filter past bookings client-side
-      if (filter === "past") {
-        const now = new Date();
-        setBookings(data.filter((b) => new Date(b.end_time) < now));
+      // Group clubhouse multi-room bookings to prevent duplication
+      const groupedData = groupClubhouseBookings(data);
+
+      // Filter bookings based on selected tab
+      if (filter === "upcoming") {
+        // Only show future bookings (end_time hasn't passed yet)
+        setBookings(groupedData.filter((b) => new Date(b.end_time) > now));
+      } else if (filter === "past") {
+        // Only show past bookings (end_time has passed)
+        setBookings(groupedData.filter((b) => new Date(b.end_time) < now));
       } else {
-        setBookings(data);
+        // Show all bookings
+        setBookings(groupedData);
       }
     } catch (err: any) {
       setError(err.message || "Failed to load bookings");
     } finally {
       setIsLoading(false);
     }
-  }, [filter]);
+  }, [filter, groupClubhouseBookings]);
 
   // Fetch on mount and when filter changes
   useEffect(() => {
@@ -187,7 +236,38 @@ export default function MyBookingsPage() {
     // Ball Wall - Sky Blue
     if (facilityName.includes("ball wall")) return "bg-sky-100 text-sky-800 border border-sky-200";
 
+    // Clubhouse rooms - Purple/Pink
+    if (facilityName.includes("changing room") || facilityName.includes("committee") || facilityName.includes("kitchen")) {
+      return "bg-purple-100 text-purple-800 border border-purple-200";
+    }
+
     return "bg-gray-100 text-gray-800 border border-gray-200";
+  };
+
+  /**
+   * Get facility row background color (lighter shade for table rows)
+   */
+  const getFacilityRowColor = (booking: Booking): string => {
+    const facilityName = booking.resource_name?.toLowerCase() || "";
+
+    // Gym - Blue
+    if (facilityName.includes("gym")) return "bg-blue-50/50 hover:bg-blue-50";
+
+    // Main Pitch - Green
+    if (facilityName.includes("main pitch")) return "bg-green-50/50 hover:bg-green-50";
+
+    // Minor Pitch - Orange
+    if (facilityName.includes("minor pitch")) return "bg-orange-50/50 hover:bg-orange-50";
+
+    // Ball Wall - Sky Blue
+    if (facilityName.includes("ball wall")) return "bg-sky-50/50 hover:bg-sky-50";
+
+    // Clubhouse rooms - Purple/Pink
+    if (facilityName.includes("changing room") || facilityName.includes("committee") || facilityName.includes("kitchen")) {
+      return "bg-purple-50/50 hover:bg-purple-50";
+    }
+
+    return "bg-gray-50/50 hover:bg-gray-50";
   };
 
   return (
@@ -276,7 +356,7 @@ export default function MyBookingsPage() {
                     const end = formatDateTime(booking.end_time);
 
                     return (
-                      <tr key={booking.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <tr key={booking.id} className={`border-b border-gray-100 ${getFacilityRowColor(booking)}`}>
                         <td className="py-4 px-4">
                           <span className="font-medium text-gray-900">{start.date}</span>
                         </td>
@@ -350,7 +430,16 @@ export default function MyBookingsPage() {
                 return (
                   <div
                     key={booking.id}
-                    className="p-4 bg-gray-50 rounded-lg border border-gray-200"
+                    className={`p-4 rounded-lg border ${getFacilityRowColor(booking)} ${
+                      booking.resource_name?.toLowerCase().includes("gym") ? "border-blue-200" :
+                      booking.resource_name?.toLowerCase().includes("main pitch") ? "border-green-200" :
+                      booking.resource_name?.toLowerCase().includes("minor pitch") ? "border-orange-200" :
+                      booking.resource_name?.toLowerCase().includes("ball wall") ? "border-sky-200" :
+                      (booking.resource_name?.toLowerCase().includes("changing room") ||
+                       booking.resource_name?.toLowerCase().includes("committee") ||
+                       booking.resource_name?.toLowerCase().includes("kitchen")) ? "border-purple-200" :
+                      "border-gray-200"
+                    }`}
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex-1">

@@ -70,7 +70,7 @@ router = APIRouter(
 @router.get(
     "",
     response_model=PaginatedBookingsResponse,
-    summary="List your bookings",
+    summary="List your gym bookings",
 )
 async def list_my_bookings(
     status: Optional[str] = Query(None, description="Filter by status: confirmed or cancelled"),
@@ -81,8 +81,14 @@ async def list_my_bookings(
     member: Member = Depends(get_current_member),
     db: AsyncSession = Depends(get_db)
 ):
+    """
+    Get the member's gym bookings only (resource_id is NULL).
+
+    For pitch/ball wall bookings, use /pitches/bookings/member
+    For clubhouse bookings, use /clubhouse/bookings
+    """
     service = BookingService(db)
-    
+
     # Convert string → enum
     status_enum = None
     if status:
@@ -93,7 +99,7 @@ async def list_my_bookings(
                 status_code=400,
                 detail="Invalid status. Use 'confirmed' or 'cancelled'",
             )
-    
+
     bookings, total = await service.list_member_bookings(
         member_id=member.id,
         status=status_enum,
@@ -101,6 +107,7 @@ async def list_my_bookings(
         to_date=to_date,
         page=page,
         limit=limit,
+        gym_only=True,  # Only return gym bookings (resource_id is NULL)
     )
 
     # Enrich bookings with resource and creator information

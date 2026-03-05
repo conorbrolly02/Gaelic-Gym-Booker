@@ -75,7 +75,35 @@ export default function SchedulePage() {
     // Ball Wall - Sky Blue
     if (facilityName.includes("ball wall")) return "bg-sky-100 text-sky-800 border border-sky-200";
 
+    // Clubhouse rooms - Purple
+    if (facilityName.includes("changing room") || facilityName.includes("committee") || facilityName.includes("kitchen")) {
+      return "bg-purple-100 text-purple-800 border border-purple-200";
+    }
+
     return "bg-gray-100 text-gray-800 border border-gray-200";
+  };
+
+  const getFacilityRowColor = (booking: Booking): string => {
+    const facilityName = booking.resource_name?.toLowerCase() || "";
+
+    // Gym - Blue
+    if (facilityName.includes("gym")) return "bg-blue-50/50 hover:bg-blue-50 border-blue-200";
+
+    // Main Pitch - Green
+    if (facilityName.includes("main pitch")) return "bg-green-50/50 hover:bg-green-50 border-green-200";
+
+    // Minor Pitch - Orange
+    if (facilityName.includes("minor pitch")) return "bg-orange-50/50 hover:bg-orange-50 border-orange-200";
+
+    // Ball Wall - Sky Blue
+    if (facilityName.includes("ball wall")) return "bg-sky-50/50 hover:bg-sky-50 border-sky-200";
+
+    // Clubhouse rooms - Purple
+    if (facilityName.includes("changing room") || facilityName.includes("committee") || facilityName.includes("kitchen")) {
+      return "bg-purple-50/50 hover:bg-purple-50 border-purple-200";
+    }
+
+    return "bg-gray-50/50 hover:bg-gray-50 border-gray-200";
   };
 
   return (
@@ -128,7 +156,7 @@ export default function SchedulePage() {
       {/* Facility Legend Card */}
       <div className="card">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Facility Color Guide</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 border border-blue-200">
             <div className="w-4 h-4 rounded-full bg-blue-600 flex-shrink-0"></div>
             <span className="text-sm font-medium text-blue-900">Gym</span>
@@ -144,6 +172,10 @@ export default function SchedulePage() {
           <div className="flex items-center gap-2 p-2 rounded-lg bg-sky-50 border border-sky-200">
             <div className="w-4 h-4 rounded-full bg-sky-500 flex-shrink-0"></div>
             <span className="text-sm font-medium text-sky-900">Ball Wall</span>
+          </div>
+          <div className="flex items-center gap-2 p-2 rounded-lg bg-purple-50 border border-purple-200">
+            <div className="w-4 h-4 rounded-full bg-purple-600 flex-shrink-0"></div>
+            <span className="text-sm font-medium text-purple-900">Clubhouse</span>
           </div>
         </div>
       </div>
@@ -223,7 +255,7 @@ export default function SchedulePage() {
                       return (
                         <div
                           key={booking.id}
-                          className="p-4 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
+                          className={`p-4 rounded-lg transition-colors ${getFacilityRowColor(booking)}`}
                         >
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex-1">

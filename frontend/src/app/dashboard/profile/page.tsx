@@ -26,7 +26,7 @@ import LoadingSpinner from "@/components/LoadingSpinner";
 import Alert from "@/components/Alert";
 
 export default function ProfilePage() {
-  const { user, member } = useAuth();
+  const { user, member, refreshUser } = useAuth();
 
   // Analytics state
   const [analytics, setAnalytics] = useState<MemberAnalytics | null>(null);
@@ -72,31 +72,42 @@ export default function ProfilePage() {
       return;
     }
 
-    // Validate file size (max 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-      setError("File size must be less than 2MB");
+    // Validate file size (max 500KB for base64 efficiency)
+    if (file.size > 500 * 1024) {
+      setError("File size must be less than 500KB. Please use a smaller image.");
       return;
     }
 
+    setUploadingQr(true);
+    setError(null);
+    setQrSuccess(null);
+
     try {
-      setUploadingQr(true);
-      setError(null);
-      setQrSuccess(null);
+      // Convert to base64 using Promise to properly handle async
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          resolve(event.target?.result as string);
+        };
+        reader.onerror = () => {
+          reject(new Error("Failed to read file"));
+        };
+        reader.readAsDataURL(file);
+      });
 
-      // Convert to base64
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const base64 = event.target?.result as string;
+      // Save to backend
+      await memberApi.updateProfile({ qr_code: base64 });
 
-        // Save to backend
-        await memberApi.updateProfile({ qr_code: base64 });
+      // Update local state immediately for instant feedback
+      setQrCode(base64);
 
-        setQrCode(base64);
-        setQrSuccess("QR code uploaded successfully!");
-      };
-      reader.readAsDataURL(file);
+      // Refresh user data from server to persist the change
+      await refreshUser();
+
+      setQrSuccess("QR code uploaded successfully!");
     } catch (err: any) {
-      setError(err?.message ?? "Failed to upload QR code");
+      console.error("QR upload error:", err);
+      setError(err?.message ?? "Failed to upload QR code. Please try a smaller image.");
     } finally {
       setUploadingQr(false);
     }
@@ -108,7 +119,13 @@ export default function ProfilePage() {
       setUploadingQr(true);
       setError(null);
       await memberApi.updateProfile({ qr_code: null });
+
+      // Update local state immediately for instant feedback
       setQrCode(null);
+
+      // Refresh user data from server to persist the change
+      await refreshUser();
+
       setQrSuccess("QR code removed successfully!");
     } catch (err: any) {
       setError(err?.message ?? "Failed to remove QR code");

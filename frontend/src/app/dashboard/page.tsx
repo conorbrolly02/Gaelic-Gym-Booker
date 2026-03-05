@@ -76,8 +76,14 @@ export default function DashboardPage() {
         const groupKey = `${booking.member_id}_${booking.start_time}_${booking.end_time}`;
 
         if (grouped[groupKey]) {
-          // Merge room names
-          grouped[groupKey].resource_name = `${grouped[groupKey].resource_name} + ${booking.resource_name}`;
+          // Merge room names - but avoid duplicates
+          const existingRooms = grouped[groupKey].resource_name?.split(' + ') || [];
+          const newRoom = booking.resource_name || '';
+
+          // Only add if this room isn't already in the list
+          if (!existingRooms.includes(newRoom)) {
+            grouped[groupKey].resource_name = `${grouped[groupKey].resource_name} + ${newRoom}`;
+          }
         } else {
           // First booking in this group - clone it
           grouped[groupKey] = { ...booking };
@@ -220,7 +226,36 @@ export default function DashboardPage() {
     // Ball Wall - Sky Blue
     if (facilityName.includes("ball wall")) return "bg-sky-100 text-sky-800 border border-sky-200";
 
+    // Clubhouse rooms - Purple
+    if (facilityName.includes("changing room") || facilityName.includes("committee") || facilityName.includes("kitchen")) {
+      return "bg-purple-100 text-purple-800 border border-purple-200";
+    }
+
     return "bg-gray-100 text-gray-800 border border-gray-200";
+  };
+
+  /** Get facility row background color */
+  const getFacilityRowColor = (booking: Booking): string => {
+    const facilityName = booking.resource_name?.toLowerCase() || "";
+
+    // Gym - Blue
+    if (facilityName.includes("gym")) return "bg-blue-50/50";
+
+    // Main Pitch - Green
+    if (facilityName.includes("main pitch")) return "bg-green-50/50";
+
+    // Minor Pitch - Orange
+    if (facilityName.includes("minor pitch")) return "bg-orange-50/50";
+
+    // Ball Wall - Sky Blue
+    if (facilityName.includes("ball wall")) return "bg-sky-50/50";
+
+    // Clubhouse rooms - Purple
+    if (facilityName.includes("changing room") || facilityName.includes("committee") || facilityName.includes("kitchen")) {
+      return "bg-purple-50/50";
+    }
+
+    return "bg-gray-50/50";
   };
 
   /** Get unique facility types from bookings */
@@ -301,7 +336,7 @@ export default function DashboardPage() {
       <div
         key={booking.id}
         className={`rounded-lg border p-2.5 sm:p-3 ${
-          today ? "border-primary-200 bg-primary-50" : "border-gray-200 bg-gray-50"
+          today ? "border-primary-200 bg-primary-50" : `border-gray-200 ${getFacilityRowColor(booking)}`
         }`}
       >
         {/* Mobile: Stacked layout, Desktop: Side-by-side */}
