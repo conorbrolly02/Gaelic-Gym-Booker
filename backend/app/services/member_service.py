@@ -385,9 +385,10 @@ class MemberService:
         if not member:
             raise ValueError("Member not found")
 
-        # Get all bookings for the member
+        # Get all bookings for the member with resource relationship loaded
         result = await self.db.execute(
             select(Booking)
+            .options(selectinload(Booking.resource))
             .where(Booking.member_id == member_id)
         )
         all_bookings = result.scalars().all()
@@ -426,14 +427,15 @@ class MemberService:
                 duration = booking.end_time - booking.start_time
                 total_hours += duration.total_seconds() / 3600
 
-            # Count by facility type (using resource_name from booking)
+            # Count by facility type (using resource relationship)
             resource_name = ""
-            if hasattr(booking, 'resource_name') and booking.resource_name:
-                resource_name = booking.resource_name.lower()
+            if booking.resource and booking.resource.name:
+                resource_name = booking.resource.name.lower()
 
-            if "gym" in resource_name:
+            # If no resource, it's a legacy gym booking (before resources were added)
+            if not resource_name or "gym" in resource_name:
                 gym_bookings += 1
-            elif "pitch" in resource_name:
+            elif "main pitch" in resource_name or "minor pitch" in resource_name:
                 pitch_bookings += 1
             elif "ball wall" in resource_name:
                 ball_wall_bookings += 1

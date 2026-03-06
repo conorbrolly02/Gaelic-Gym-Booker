@@ -41,7 +41,7 @@ export default function BallWallBookingBase({
   ballWallId,
   ballWallName,
 }: BallWallBookingProps) {
-  const { isCoach } = useAuth();
+  const { isCoach, member } = useAuth();
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [selectedCourt, setSelectedCourt] = useState<CourtSelection>("both");
   const [availability, setAvailability] = useState<BallWallAvailability | null>(null);
@@ -108,6 +108,8 @@ export default function BallWallBookingBase({
 
     if (slot.available_areas.includes(area)) {
       setSelectedSlot(slot);
+      // Default requester name to current user's name
+      setRequesterName(member?.full_name || "");
       setShowBookingModal(true);
     }
   };
@@ -612,7 +614,13 @@ export default function BallWallBookingBase({
                 right: "half-right",
               };
               const area = areaMap[selectedCourt];
-              const isAvailable = slot.available_areas.includes(area);
+
+              // Check if slot time has passed
+              const now = new Date();
+              const slotEnd = new Date(slot.end);
+              const isPast = slotEnd < now;
+
+              const isAvailable = slot.available_areas.includes(area) && !isPast;
 
               const startTime = new Date(slot.start).toLocaleTimeString("en-GB", {
                 hour: "2-digit",
@@ -628,9 +636,11 @@ export default function BallWallBookingBase({
                   key={index}
                   onClick={() => isAvailable && handleSlotClick(slot)}
                   className={`p-4 rounded-lg border-2 transition-all ${
-                    isAvailable
-                      ? "border-green-500 bg-green-50 cursor-pointer hover:bg-green-100 hover:shadow-md"
-                      : "border-red-300 bg-red-50 cursor-not-allowed opacity-60"
+                    isPast
+                      ? "border-gray-300 bg-gray-100 cursor-not-allowed opacity-50"
+                      : isAvailable
+                        ? "border-green-500 bg-green-50 cursor-pointer hover:bg-green-100 hover:shadow-md"
+                        : "border-red-300 bg-red-50 cursor-not-allowed opacity-60"
                   }`}
                 >
                   <div className="flex justify-between items-start mb-2">
@@ -639,7 +649,9 @@ export default function BallWallBookingBase({
                         {startTime} - {endTime}
                       </p>
                       <p className="text-sm text-gray-600">
-                        {isAvailable ? (
+                        {isPast ? (
+                          <span className="text-gray-600 font-medium">Past</span>
+                        ) : isAvailable ? (
                           <span className="text-green-700 font-medium">Available</span>
                         ) : (
                           <span className="text-red-700 font-medium">Not Available</span>
@@ -648,14 +660,16 @@ export default function BallWallBookingBase({
                     </div>
                     <span
                       className={`px-2 py-1 rounded text-xs font-semibold ${
-                        slot.status === "free"
-                          ? "bg-green-200 text-green-800"
-                          : slot.status === "partial"
-                          ? "bg-yellow-200 text-yellow-800"
-                          : "bg-red-200 text-red-800"
+                        isPast
+                          ? "bg-gray-200 text-gray-700"
+                          : slot.status === "free"
+                            ? "bg-green-200 text-green-800"
+                            : slot.status === "partial"
+                              ? "bg-yellow-200 text-yellow-800"
+                              : "bg-red-200 text-red-800"
                       }`}
                     >
-                      {slot.status}
+                      {isPast ? "past" : slot.status}
                     </span>
                   </div>
                 </div>

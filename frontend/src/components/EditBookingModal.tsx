@@ -1,18 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { bookingApi } from "@/lib/api";
+import { bookingApi, adminApi } from "@/lib/api";
 import { EditBookingRequest, Booking } from "@/types";
 
 export default function EditBookingModal({
   booking,
   onClose,
   onUpdated,
+  isAdmin = false,
 }: {
   booking: Booking;
   onClose: () => void;
   onUpdated: (b: Booking) => void;
-}) 
+  isAdmin?: boolean;
+})
 
 {
   const [form, setForm] = useState<EditBookingRequest>({
@@ -26,14 +28,22 @@ export default function EditBookingModal({
   });
 
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function save() {
+    setIsSubmitting(true);
+    setError(null);
     try {
-      const updated = await bookingApi.editBooking(booking.id, form);
+      // Use admin API if editing as admin, otherwise use regular booking API
+      const updated = isAdmin
+        ? await adminApi.editBooking(booking.id, form)
+        : await bookingApi.editBooking(booking.id, form);
       onUpdated(updated);
       onClose();
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -72,12 +82,21 @@ export default function EditBookingModal({
         {error && <div className="text-red-600 mt-3 text-sm">{error}</div>}
 
         <div className="flex justify-end mt-6 gap-2">
-          <button className="px-4 py-2 bg-gray-300 rounded" onClick={onClose}>
+          <button
+            className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 transition-colors"
+            onClick={onClose}
+            disabled={isSubmitting}
+          >
             Cancel
           </button>
 
-          <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={save}>
-            Save Changes
+          <button
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700
+                       disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            onClick={save}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </div>

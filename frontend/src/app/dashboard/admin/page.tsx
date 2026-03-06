@@ -16,7 +16,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { adminApi } from "@/lib/api";
-import { AdminStats } from "@/types";
+import { AdminStats, AdminAnalytics } from "@/types";
 import Alert from "@/components/Alert";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import ApprovalsModal from "@/components/ApprovalsModal";
@@ -27,9 +27,11 @@ export default function AdminDashboardPage() {
 
   // Stats data
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
 
   // UI state
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showApprovalsModal, setShowApprovalsModal] = useState(false);
 
@@ -40,10 +42,11 @@ export default function AdminDashboardPage() {
     }
   }, [isAdmin, authLoading, router]);
 
-  // Fetch stats on mount
+  // Fetch stats and analytics on mount
   useEffect(() => {
     if (isAdmin) {
       fetchStats();
+      fetchAnalytics();
     }
   }, [isAdmin]);
 
@@ -55,6 +58,17 @@ export default function AdminDashboardPage() {
       setError(err.message || "Failed to load statistics");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchAnalytics = async () => {
+    try {
+      const data = await adminApi.getAnalytics();
+      setAnalytics(data);
+    } catch (err: any) {
+      console.error("Failed to load analytics:", err);
+    } finally {
+      setLoadingAnalytics(false);
     }
   };
 
@@ -170,8 +184,104 @@ export default function AdminDashboardPage() {
             />
           )}
 
+          {/* Booking Analytics */}
+          {!loadingAnalytics && analytics && (
+            <>
+              {/* Overview Stats */}
+              <section className="card p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Booking Analytics (All Members)</h2>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {/* Total Bookings */}
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+                    <div className="text-3xl font-bold text-blue-700">{analytics.total_bookings}</div>
+                    <div className="text-sm text-blue-600 mt-1">Total Bookings</div>
+                  </div>
+
+                  {/* Upcoming */}
+                  <div className="bg-green-50 rounded-lg p-4 border border-green-100">
+                    <div className="text-3xl font-bold text-green-700">{analytics.upcoming_bookings}</div>
+                    <div className="text-sm text-green-600 mt-1">Upcoming</div>
+                  </div>
+
+                  {/* Completed */}
+                  <div className="bg-purple-50 rounded-lg p-4 border border-purple-100">
+                    <div className="text-3xl font-bold text-purple-700">{analytics.completed_bookings}</div>
+                    <div className="text-sm text-purple-600 mt-1">Completed</div>
+                  </div>
+
+                  {/* Hours Booked */}
+                  <div className="bg-amber-50 rounded-lg p-4 border border-amber-100">
+                    <div className="text-3xl font-bold text-amber-700">{analytics.total_hours_booked}</div>
+                    <div className="text-sm text-amber-600 mt-1">Hours Booked</div>
+                  </div>
+                </div>
+
+                {/* Additional time-based stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
+                  {/* This Week */}
+                  <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-100">
+                    <div className="text-2xl font-bold text-indigo-700">{analytics.this_week_bookings}</div>
+                    <div className="text-sm text-indigo-600 mt-1">This Week</div>
+                  </div>
+
+                  {/* This Month */}
+                  <div className="bg-pink-50 rounded-lg p-4 border border-pink-100">
+                    <div className="text-2xl font-bold text-pink-700">{analytics.this_month_bookings}</div>
+                    <div className="text-sm text-pink-600 mt-1">This Month</div>
+                  </div>
+
+                  {/* Cancelled */}
+                  <div className="bg-red-50 rounded-lg p-4 border border-red-100">
+                    <div className="text-2xl font-bold text-red-700">{analytics.cancelled_bookings}</div>
+                    <div className="text-sm text-red-600 mt-1">Cancelled</div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Facility Breakdown */}
+              <section className="card p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Bookings by Facility</h2>
+
+                <div className="space-y-4">
+                  {/* Gym */}
+                  <FacilityBar
+                    label="Gym"
+                    count={analytics.gym_bookings}
+                    total={analytics.total_bookings}
+                    color="blue"
+                  />
+
+                  {/* Pitches */}
+                  <FacilityBar
+                    label="Pitches"
+                    count={analytics.pitch_bookings}
+                    total={analytics.total_bookings}
+                    color="green"
+                  />
+
+                  {/* Clubhouse */}
+                  <FacilityBar
+                    label="Clubhouse"
+                    count={analytics.clubhouse_bookings}
+                    total={analytics.total_bookings}
+                    color="purple"
+                  />
+
+                  {/* Ball Wall */}
+                  <FacilityBar
+                    label="Ball Wall"
+                    count={analytics.ball_wall_bookings}
+                    total={analytics.total_bookings}
+                    color="sky"
+                  />
+                </div>
+              </section>
+            </>
+          )}
+
           {/* Quick Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Members Management Card */}
             <Link href="/dashboard/admin/members" className="card hover:shadow-md transition-shadow">
               <div className="flex items-start gap-4">
@@ -211,6 +321,26 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
             </Link>
+
+            {/* Profile Card */}
+            <Link href="/dashboard/profile" className="card hover:shadow-md transition-shadow">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">My Profile</h3>
+                  <p className="text-gray-600 mt-1">
+                    View and update your personal information and account settings.
+                  </p>
+                  <span className="inline-block mt-3 text-indigo-600 font-medium text-sm">
+                    View Profile &rarr;
+                  </span>
+                </div>
+              </div>
+            </Link>
           </div>
         </>
       )}
@@ -221,6 +351,40 @@ export default function AdminDashboardPage() {
         onClose={() => setShowApprovalsModal(false)}
         onApprovalComplete={handleApprovalComplete}
       />
+    </div>
+  );
+}
+
+// Facility progress bar component
+interface FacilityBarProps {
+  label: string;
+  count: number;
+  total: number;
+  color: "blue" | "green" | "purple" | "sky";
+}
+
+function FacilityBar({ label, count, total, color }: FacilityBarProps) {
+  const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+
+  const colorClasses = {
+    blue: "bg-blue-600",
+    green: "bg-green-600",
+    purple: "bg-purple-600",
+    sky: "bg-sky-600",
+  };
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-sm font-medium text-gray-700">{label}</span>
+        <span className="text-sm text-gray-600">{count} ({percentage}%)</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-2.5">
+        <div
+          className={`h-2.5 rounded-full ${colorClasses[color]}`}
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
     </div>
   );
 }

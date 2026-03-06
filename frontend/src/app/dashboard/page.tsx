@@ -111,8 +111,22 @@ export default function DashboardPage() {
         clubhouseApi.getMemberBookings({ upcoming_only: true }).catch(() => []),
       ]);
 
+      // Normalize pitch bookings to match Booking type (start -> start_time, end -> end_time)
+      const normalizedPitchBookings = pitchBookings.map((b: any) => ({
+        ...b,
+        start_time: b.start || b.start_time,
+        end_time: b.end || b.end_time,
+      }));
+
+      // Normalize clubhouse bookings to match Booking type
+      const normalizedClubhouseBookings = clubhouseBookings.map((b: any) => ({
+        ...b,
+        start_time: b.start_time || b.start,
+        end_time: b.end_time || b.end,
+      }));
+
       // Combine all bookings
-      const allBookings = [...gymBookings, ...pitchBookings, ...clubhouseBookings];
+      const allBookings = [...gymBookings, ...normalizedPitchBookings, ...normalizedClubhouseBookings];
 
       // Group clubhouse multi-room bookings to prevent duplication
       const groupedBookings = groupClubhouseBookings(allBookings);
@@ -150,8 +164,22 @@ export default function DashboardPage() {
         clubhouseApi.getMemberBookings({}).catch(() => []),
       ]);
 
+      // Normalize pitch bookings to match Booking type (start -> start_time, end -> end_time)
+      const normalizedPitchBookings = pitchBookings.map((b: any) => ({
+        ...b,
+        start_time: b.start || b.start_time,
+        end_time: b.end || b.end_time,
+      }));
+
+      // Normalize clubhouse bookings to match Booking type
+      const normalizedClubhouseBookings = clubhouseBookings.map((b: any) => ({
+        ...b,
+        start_time: b.start_time || b.start,
+        end_time: b.end_time || b.end,
+      }));
+
       // Combine all bookings
-      const allBookings = [...gymBookings, ...pitchBookings, ...clubhouseBookings];
+      const allBookings = [...gymBookings, ...normalizedPitchBookings, ...normalizedClubhouseBookings];
 
       // Group clubhouse multi-room bookings to prevent duplication
       const groupedBookings = groupClubhouseBookings(allBookings);

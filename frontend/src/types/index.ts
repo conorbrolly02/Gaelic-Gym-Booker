@@ -168,6 +168,23 @@ export interface AdminStats {
 }
 
 /**
+ * Admin booking analytics (aggregate across all members)
+ */
+export interface AdminAnalytics {
+  total_bookings: number;
+  upcoming_bookings: number;
+  completed_bookings: number;
+  cancelled_bookings: number;
+  gym_bookings: number;
+  pitch_bookings: number;
+  clubhouse_bookings: number;
+  ball_wall_bookings: number;
+  total_hours_booked: number;
+  this_week_bookings: number;
+  this_month_bookings: number;
+}
+
+/**
  * Pending approval item (member)
  */
 export interface PendingMember {

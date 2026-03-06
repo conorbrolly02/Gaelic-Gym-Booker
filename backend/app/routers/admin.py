@@ -20,7 +20,7 @@ from uuid import UUID
 
 from app.database import get_db
 from app.schemas.member import MemberWithUserResponse
-from app.schemas.booking import BookingResponse, BookingCreate, AdminBookingCreate
+from app.schemas.booking import BookingResponse, BookingCreate, AdminBookingCreate, EditBookingRequest
 from app.schemas.admin import AdminUpdateMember
 from app.services.member_service import MemberService
 from app.services.booking_service import BookingService, BookingError, BookingErrorCode
@@ -322,7 +322,7 @@ async def list_all_bookings(
     from_date: Optional[datetime] = Query(None),
     to_date: Optional[datetime] = Query(None),
     page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(1000, ge=1, le=10000, description="Max number of bookings to return (default: 1000)"),
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -574,6 +574,46 @@ async def admin_cancel_booking(
         return booking_error_response(e, status_code)
 
 
+@router.patch(
+    "/bookings/{booking_id}",
+    response_model=BookingResponse,
+    summary="Edit any booking (admin)",
+)
+async def admin_edit_booking(
+    booking_id: UUID,
+    payload: EditBookingRequest,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Edit any booking (admin override).
+
+    Admins can edit any member's booking to change times/dates.
+    This is useful for resolving conflicts or accommodating last-minute matches.
+    """
+    from app.services.booking_service import BookingService
+    from app.services.conflict_service import ConflictService
+    from app.services.policy_service import PolicyService
+
+    service = BookingService(
+        db,
+        conflict_service=ConflictService(db),
+        policy_service=PolicyService(),
+    )
+
+    try:
+        booking = await service.edit_booking(
+            booking_id=booking_id,
+            edit=payload,
+            actor_user=admin,
+            is_admin=True,
+        )
+        await db.commit()
+        return booking
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 # ============================================
 # Dashboard Statistics
 # ============================================
@@ -724,5 +764,141 @@ async def get_stats(
         "pending_approvals": total_pending_approvals,
         "active_members": active_members,
         "total_bookings_today": bookings_today,
+    }
+
+
+@router.get(
+    "/analytics",
+    response_model=dict,
+    summary="Get aggregate booking analytics across all members",
+)
+async def get_analytics(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get comprehensive booking analytics for all members combined.
+
+    Returns aggregate stats similar to individual member analytics but
+    across the entire system.
+    """
+    from sqlalchemy import select, func
+    from app.models.booking import Booking
+    from app.models.resource import Resource
+    from sqlalchemy.orm import selectinload
+    from datetime import datetime, timedelta
+
+    now = datetime.utcnow()
+
+    # Total bookings (all statuses)
+    total_bookings_result = await db.execute(
+        select(func.count(Booking.id))
+    )
+    total_bookings = total_bookings_result.scalar() or 0
+
+    # Upcoming bookings (confirmed, end_time >= now)
+    upcoming_bookings_result = await db.execute(
+        select(func.count(Booking.id)).where(
+            Booking.status == BookingStatus.CONFIRMED,
+            Booking.end_time >= now
+        )
+    )
+    upcoming_bookings = upcoming_bookings_result.scalar() or 0
+
+    # Completed bookings (confirmed, end_time < now)
+    completed_bookings_result = await db.execute(
+        select(func.count(Booking.id)).where(
+            Booking.status == BookingStatus.CONFIRMED,
+            Booking.end_time < now
+        )
+    )
+    completed_bookings = completed_bookings_result.scalar() or 0
+
+    # Cancelled bookings
+    cancelled_bookings_result = await db.execute(
+        select(func.count(Booking.id)).where(
+            Booking.status == BookingStatus.CANCELLED
+        )
+    )
+    cancelled_bookings = cancelled_bookings_result.scalar() or 0
+
+    # Get bookings by facility type (by querying resource names)
+    # We'll get all bookings with resources and group by resource name patterns
+    bookings_with_resources = await db.execute(
+        select(Booking).options(
+            selectinload(Booking.resource)
+        ).where(Booking.status == BookingStatus.CONFIRMED)
+    )
+    all_bookings = bookings_with_resources.scalars().all()
+
+    gym_count = 0
+    pitch_count = 0
+    clubhouse_count = 0
+    ball_wall_count = 0
+
+    for booking in all_bookings:
+        resource_name = booking.resource.name.lower() if booking.resource else "gym"
+
+        if "gym" in resource_name:
+            gym_count += 1
+        elif "main pitch" in resource_name or "minor pitch" in resource_name:
+            pitch_count += 1
+        elif "ball wall" in resource_name:
+            ball_wall_count += 1
+        elif "changing room" in resource_name or "committee" in resource_name or "kitchen" in resource_name:
+            clubhouse_count += 1
+        else:
+            # Default to gym for legacy bookings
+            gym_count += 1
+
+    # Calculate total hours booked (confirmed bookings only)
+    total_hours = 0
+    for booking in all_bookings:
+        duration = booking.end_time - booking.start_time
+        hours = duration.total_seconds() / 3600
+        total_hours += hours
+
+    # Round to 1 decimal place
+    total_hours_booked = round(total_hours, 1)
+
+    # This week's bookings (Mon-Sun)
+    today = datetime.utcnow().date()
+    start_of_week = today - timedelta(days=today.weekday())  # Monday
+    start_of_week_dt = datetime.combine(start_of_week, datetime.min.time())
+    end_of_week_dt = start_of_week_dt + timedelta(days=7)
+
+    this_week_result = await db.execute(
+        select(func.count(Booking.id)).where(
+            Booking.status == BookingStatus.CONFIRMED,
+            Booking.start_time >= start_of_week_dt,
+            Booking.start_time < end_of_week_dt
+        )
+    )
+    this_week_bookings = this_week_result.scalar() or 0
+
+    # This month's bookings
+    start_of_month = today.replace(day=1)
+    start_of_month_dt = datetime.combine(start_of_month, datetime.min.time())
+
+    this_month_result = await db.execute(
+        select(func.count(Booking.id)).where(
+            Booking.status == BookingStatus.CONFIRMED,
+            Booking.start_time >= start_of_month_dt
+        )
+    )
+    this_month_bookings = this_month_result.scalar() or 0
+
+    return {
+        "total_bookings": total_bookings,
+        "upcoming_bookings": upcoming_bookings,
+        "completed_bookings": completed_bookings,
+        "cancelled_bookings": cancelled_bookings,
+        "gym_bookings": gym_count,
+        "pitch_bookings": pitch_count,
+        "clubhouse_bookings": clubhouse_count,
+        "ball_wall_bookings": ball_wall_count,
+        "total_hours_booked": total_hours_booked,
+        "this_week_bookings": this_week_bookings,
+        "this_month_bookings": this_month_bookings,
     }
 

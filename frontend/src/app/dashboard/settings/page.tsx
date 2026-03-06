@@ -132,12 +132,31 @@ export default function UserSettingsPage() {
     try {
       setSavingProfile(true);
       setProfileError(null);
-      const updated = await memberApi.updateProfile({
+
+      // Update member profile (name and phone)
+      const updatedMember = await memberApi.updateProfile({
         full_name: profile.full_name.trim(),
-        email: profile.email.trim(),
         phone: (profile.phone ?? "").trim() || null,
       });
-      setInitialProfile(updated);
+
+      // If email changed, update it via authApi
+      let finalEmail = initialProfile.email;
+      if (profile.email.trim() !== initialProfile.email) {
+        const authResponse = await authApi.updateProfile({
+          email: profile.email.trim(),
+        });
+        finalEmail = authResponse.user.email;
+      }
+
+      // Update initial profile with saved values
+      setInitialProfile({
+        full_name: updatedMember.full_name,
+        email: finalEmail,
+        phone: updatedMember.phone,
+      });
+
+      setProfileSuccess("Profile updated successfully!");
+      setTimeout(() => setProfileSuccess(null), 3000);
     } catch (err: any) {
       setProfileError(err?.message ?? "Failed to save changes.");
     } finally {

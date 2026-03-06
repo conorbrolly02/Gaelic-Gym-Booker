@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { pitchApi } from "@/lib/api";
 import Alert from "@/components/Alert";
+import { useAuth } from "@/context/AuthContext";
 import GaaPitchSvg, {
   AreaMode,
   AreaSelection,
@@ -49,6 +50,9 @@ export default function PitchBookingBase({
   flipX?: boolean;
   flipY?: boolean;
 }) {
+  // Get current user info
+  const { member } = useAuth();
+
   // Date & availability
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
@@ -115,6 +119,8 @@ export default function PitchBookingBase({
     setSlotToBook(slot);
     setBookingError(null);
     setBookingSuccess(null);
+    // Default requester name to current user's name
+    setBookingRequester(member?.full_name || "");
     setModalOpen(true);
   };
 
@@ -298,13 +304,19 @@ export default function PitchBookingBase({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {slots.map((s) => {
-              const isFree = s.status === "free";
-              const bg =
-                s.status === "free"
+              const now = new Date();
+              const slotEnd = new Date(s.end);
+              const isPast = slotEnd < now;
+              const isFree = s.status === "free" && !isPast;
+
+              const bg = isPast
+                ? "bg-gray-100 border-gray-300 opacity-50 cursor-not-allowed"
+                : s.status === "free"
                   ? "bg-green-50 border-green-400 hover:shadow hover:scale-[1.01]"
                   : s.status === "partial"
                   ? "bg-yellow-50 border-yellow-400 opacity-80"
                   : "bg-red-50 border-red-400 opacity-80";
+
               return (
                 <button
                   key={`${s.start}-${s.end}`}
@@ -324,7 +336,13 @@ export default function PitchBookingBase({
                     })}
                   </p>
                   <p className="text-xs mt-1">
-                    {isFree ? "Free" : s.status === "partial" ? "Partially booked" : "Booked"}
+                    {isPast
+                      ? "Past"
+                      : isFree
+                        ? "Free"
+                        : s.status === "partial"
+                          ? "Partially booked"
+                          : "Booked"}
                   </p>
                 </button>
               );

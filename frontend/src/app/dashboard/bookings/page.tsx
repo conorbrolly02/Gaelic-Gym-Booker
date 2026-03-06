@@ -11,8 +11,8 @@
  * - Responsive table/card layout
  */
 
-import React, { useState, useEffect, useCallback } from "react";
-import { bookingApi } from "@/lib/api";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { bookingApi, pitchApi, clubhouseApi } from "@/lib/api";
 import { Booking } from "@/types";
 import Alert from "@/components/Alert";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -21,13 +21,22 @@ import CancelBookingModal from "@/components/CancelBookingModal";
 import DeleteCancelledButton from "@/components/DeleteCancelledButton";
 
 type FilterType = "upcoming" | "past" | "all";
+type FacilityFilter = "all" | "gym" | "main_pitch" | "minor_pitch" | "ball_wall" | "clubhouse";
+type StatusFilter = "all" | "CONFIRMED" | "CANCELLED";
 
 export default function MyBookingsPage() {
-  // Bookings data
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  // Bookings data - store all bookings
+  const [allBookings, setAllBookings] = useState<Booking[]>([]);
 
   // Filter state
   const [filter, setFilter] = useState<FilterType>("upcoming");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [facilityFilter, setFacilityFilter] = useState<FacilityFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+
+  // Touch/swipe state for mobile
+  const touchStartX = useRef<number | null>(null);
+  const touchEndX = useRef<number | null>(null);
 
   // UI state
   const [isLoading, setIsLoading] = useState(true);
@@ -78,48 +87,116 @@ export default function MyBookingsPage() {
   }, []);
 
   /**
-   * Fetch bookings based on current filter
+   * Fetch all bookings from all sources
    */
   const fetchBookings = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const now = new Date();
-      let params: { upcoming?: boolean; status?: string } = {};
+      // Fetch bookings from all three sources (fetch all, not filtered by time)
+      const [gymBookings, pitchBookings, clubhouseBookings] = await Promise.all([
+        bookingApi.getBookings({}),
+        pitchApi.getMemberPitchBookings({}),
+        clubhouseApi.getMemberBookings({}),
+      ]);
 
-      if (filter === "upcoming") {
-        params.upcoming = true;
-      }
-      // For "past" and "all", we fetch all and filter client-side
+      // Normalize pitch bookings to match Booking type (start -> start_time, end -> end_time)
+      const normalizedPitchBookings = pitchBookings.map((b: any) => ({
+        ...b,
+        start_time: b.start || b.start_time,
+        end_time: b.end || b.end_time,
+      }));
 
-      const data = await bookingApi.getBookings(params);
+      // Normalize clubhouse bookings to match Booking type
+      const normalizedClubhouseBookings = clubhouseBookings.map((b: any) => ({
+        ...b,
+        start_time: b.start_time || b.start,
+        end_time: b.end_time || b.end,
+      }));
+
+      // Combine all bookings
+      const combined = [...gymBookings, ...normalizedPitchBookings, ...normalizedClubhouseBookings];
 
       // Group clubhouse multi-room bookings to prevent duplication
-      const groupedData = groupClubhouseBookings(data);
+      const groupedData = groupClubhouseBookings(combined);
 
-      // Filter bookings based on selected tab
-      if (filter === "upcoming") {
-        // Only show future bookings (end_time hasn't passed yet)
-        setBookings(groupedData.filter((b) => new Date(b.end_time) > now));
-      } else if (filter === "past") {
-        // Only show past bookings (end_time has passed)
-        setBookings(groupedData.filter((b) => new Date(b.end_time) < now));
-      } else {
-        // Show all bookings
-        setBookings(groupedData);
-      }
+      // Store all bookings (filtering happens in useMemo)
+      setAllBookings(groupedData);
     } catch (err: any) {
       setError(err.message || "Failed to load bookings");
     } finally {
       setIsLoading(false);
     }
-  }, [filter, groupClubhouseBookings]);
+  }, [groupClubhouseBookings]);
 
-  // Fetch on mount and when filter changes
+  // Fetch on mount
   useEffect(() => {
     fetchBookings();
   }, [fetchBookings]);
+
+  /**
+   * Filter and search bookings based on current filters
+   */
+  const filteredBookings = useMemo(() => {
+    let filtered = [...allBookings];
+    const now = new Date();
+
+    // Time filter (upcoming/past/all)
+    if (filter === "upcoming") {
+      filtered = filtered.filter(b => new Date(b.end_time) > now);
+    } else if (filter === "past") {
+      filtered = filtered.filter(b => new Date(b.end_time) < now);
+    }
+
+    // Status filter
+    if (statusFilter !== "all") {
+      filtered = filtered.filter(b => b.status === statusFilter);
+    }
+
+    // Facility filter
+    if (facilityFilter !== "all") {
+      filtered = filtered.filter(b => {
+        const facilityName = b.resource_name?.toLowerCase() || "";
+        switch (facilityFilter) {
+          case "gym":
+            return facilityName.includes("gym");
+          case "main_pitch":
+            return facilityName.includes("main pitch");
+          case "minor_pitch":
+            return facilityName.includes("minor pitch");
+          case "ball_wall":
+            return facilityName.includes("ball wall");
+          case "clubhouse":
+            return facilityName.includes("changing room") ||
+                   facilityName.includes("committee") ||
+                   facilityName.includes("kitchen");
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(b =>
+        b.team_name?.toLowerCase().includes(query) ||
+        b.requester_name?.toLowerCase().includes(query) ||
+        b.resource_name?.toLowerCase().includes(query) ||
+        b.title?.toLowerCase().includes(query)
+      );
+    }
+
+    // Sort by start time
+    filtered.sort((a, b) => {
+      const timeA = new Date(a.start_time).getTime();
+      const timeB = new Date(b.start_time).getTime();
+      return filter === "past" ? timeB - timeA : timeA - timeB;
+    });
+
+    return filtered;
+  }, [allBookings, filter, statusFilter, facilityFilter, searchQuery]);
 
   /**
    * Handle editing a booking
@@ -219,6 +296,46 @@ export default function MyBookingsPage() {
   };
 
   /**
+   * Handle touch start for swipe detection
+   */
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  /**
+   * Handle touch move for swipe detection
+   */
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.touches[0].clientX;
+  };
+
+  /**
+   * Handle touch end to detect swipe direction and change tab
+   */
+  const handleTouchEnd = () => {
+    if (!touchStartX.current || !touchEndX.current) return;
+
+    const diff = touchStartX.current - touchEndX.current;
+    const threshold = 50; // Minimum swipe distance
+
+    // Swipe left (next tab)
+    if (diff > threshold) {
+      if (filter === "upcoming") setFilter("past");
+      else if (filter === "past") setFilter("all");
+    }
+
+    // Swipe right (previous tab)
+    if (diff < -threshold) {
+      if (filter === "all") setFilter("past");
+      else if (filter === "past") setFilter("upcoming");
+    }
+
+    // Reset
+    touchStartX.current = null;
+    touchEndX.current = null;
+  };
+
+  /**
    * Get facility badge color
    */
   const getFacilityBadgeColor = (booking: Booking): string => {
@@ -305,8 +422,84 @@ export default function MyBookingsPage() {
         <Alert type="success" message={success} onClose={() => setSuccess(null)} />
       )}
 
+      {/* Search and Filters */}
+      <div className="card space-y-4">
+        {/* Search Bar */}
+        <div className="relative">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search by facility, team, or requester..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Filter Controls */}
+        <div className="flex flex-col sm:flex-row gap-4">
+          {/* Facility Filter */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Facility</label>
+            <select
+              value={facilityFilter}
+              onChange={(e) => setFacilityFilter(e.target.value as FacilityFilter)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Facilities</option>
+              <option value="gym">Gym</option>
+              <option value="main_pitch">Main Pitch</option>
+              <option value="minor_pitch">Minor Pitch</option>
+              <option value="ball_wall">Ball Wall</option>
+              <option value="clubhouse">Clubhouse Rooms</option>
+            </select>
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Statuses</option>
+              <option value="CONFIRMED">Confirmed</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       {/* Bookings List */}
-      <div className="card">
+      <div
+        className="card"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         {/* Loading state */}
         {isLoading && (
           <div className="py-12">
@@ -315,7 +508,7 @@ export default function MyBookingsPage() {
         )}
 
         {/* Empty state */}
-        {!isLoading && bookings.length === 0 && (
+        {!isLoading && filteredBookings.length === 0 && (
           <div className="text-center py-12">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -334,7 +527,7 @@ export default function MyBookingsPage() {
         )}
 
         {/* Bookings table/cards */}
-        {!isLoading && bookings.length > 0 && (
+        {!isLoading && filteredBookings.length > 0 && (
           <>
             {/* Desktop table view */}
             <div className="hidden md:block overflow-x-auto">
@@ -351,7 +544,7 @@ export default function MyBookingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {bookings.map((booking) => {
+                  {filteredBookings.map((booking) => {
                     const start = formatDateTime(booking.start_time);
                     const end = formatDateTime(booking.end_time);
 
@@ -423,7 +616,7 @@ export default function MyBookingsPage() {
 
             {/* Mobile card view */}
             <div className="md:hidden space-y-3">
-              {bookings.map((booking) => {
+              {filteredBookings.map((booking) => {
                 const start = formatDateTime(booking.start_time);
                 const end = formatDateTime(booking.end_time);
 
