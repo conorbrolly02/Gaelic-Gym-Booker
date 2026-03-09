@@ -54,6 +54,7 @@ export default function UserSettingsPage() {
   // ---------------------------- PROFILE STATE -------------------------------
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profile, setProfile] = useState<Profile>({
     full_name: "",
@@ -232,6 +233,11 @@ export default function UserSettingsPage() {
             <Alert type="error" message={profileError} onClose={() => setProfileError(null)} />
           </div>
         )}
+        {profileSuccess && (
+          <div className="mb-4">
+            <Alert type="success" message={profileSuccess} onClose={() => setProfileSuccess(null)} />
+          </div>
+        )}
 
         <form onSubmit={onSaveProfile} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Full name */}
@@ -294,10 +300,12 @@ export default function UserSettingsPage() {
             <button
               type="submit"
               disabled={!profileDirty || savingProfile}
-              className={`px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors
-                ${!profileDirty || savingProfile
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-primary-600 hover:bg-primary-700"}
+              className={`px-4 py-2 rounded-lg text-white text-sm font-medium transition-all shadow-md
+                ${savingProfile
+                  ? "bg-yellow-500 cursor-wait"
+                  : profileDirty
+                  ? "bg-green-600 hover:bg-green-700 hover:shadow-lg"
+                  : "bg-gray-400 cursor-not-allowed opacity-60"}
               `}
             >
               {savingProfile ? "Saving…" : "Save changes"}
@@ -306,7 +314,11 @@ export default function UserSettingsPage() {
               type="button"
               disabled={!profileDirty || savingProfile}
               onClick={() => initialProfile && setProfile(initialProfile)}
-              className="px-4 py-2 rounded-lg border text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+              className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all
+                ${profileDirty && !savingProfile
+                  ? "border-orange-500 text-orange-700 bg-orange-50 hover:bg-orange-100"
+                  : "border-gray-300 text-gray-500 bg-gray-50 cursor-not-allowed opacity-50"}
+              `}
             >
               Reset
             </button>
