@@ -70,6 +70,26 @@ class Settings(BaseSettings):
     # Closing time for gym (24-hour format HH:MM) - midnight next day (24 hours)
     GYM_CLOSE_TIME: str = "00:00"
 
+    # Email configuration (SMTP)
+    # SMTP server hostname (e.g., smtp.gmail.com, smtp-mail.outlook.com)
+    SMTP_HOST: Optional[str] = None
+    # SMTP server port (587 for TLS, 465 for SSL, 25 for unencrypted)
+    SMTP_PORT: int = 587
+    # Email address to authenticate with SMTP server
+    SMTP_USERNAME: Optional[str] = None
+    # Password or app-specific password for SMTP authentication
+    SMTP_PASSWORD: Optional[str] = None
+    # Email address that appears in the "From" field
+    SMTP_FROM_EMAIL: Optional[str] = None
+    # Display name that appears in the "From" field
+    SMTP_FROM_NAME: str = "Gaelic Gym Booker"
+    # Enable/disable TLS encryption (recommended for port 587)
+    SMTP_USE_TLS: bool = True
+    # Enable/disable SSL encryption (for port 465)
+    SMTP_USE_SSL: bool = False
+    # Admin email addresses (comma-separated) for notifications
+    ADMIN_EMAILS: str = ""
+
     class Config:
         # Load from .env file if it exists (useful for local development)
         env_file = ".env"

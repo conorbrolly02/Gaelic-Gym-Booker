@@ -158,7 +158,15 @@ class Member(Base):
         back_populates="member",
         lazy="selectin"
     )
-    
+
+    # One member can have many facility requests
+    facility_requests = relationship(
+        "FacilityRequest",
+        back_populates="member",
+        lazy="selectin",
+        foreign_keys="FacilityRequest.member_id"
+    )
+
     def __repr__(self):
         """String representation for debugging."""
         return f"<Member {self.full_name} ({self.membership_status.value})>"

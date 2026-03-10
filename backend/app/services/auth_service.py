@@ -13,6 +13,10 @@ from uuid import UUID
 from app.models.user import User, UserRole
 from app.models.member import Member, MembershipStatus
 from app.auth.security import hash_password, verify_password
+from app.services.email_service import email_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -117,7 +121,24 @@ class AuthService:
         await self.db.commit()
         await self.db.refresh(user)
         await self.db.refresh(member)
-        
+
+        logger.info(f"New user registered: {email} as {user.role.value}")
+
+        # Send confirmation email to user
+        await email_service.send_registration_confirmation(
+            user_email=email,
+            user_name=full_name,
+            user_role=user.role.value,
+        )
+
+        # Notify admins of new registration
+        await email_service.notify_admins_new_registration(
+            user_name=full_name,
+            user_email=email,
+            user_role=user.role.value,
+            phone=phone,
+        )
+
         return user, member
     
     async def authenticate_user(

@@ -17,6 +17,7 @@ from app.routers import auth_router, members_router, bookings_router, admin_rout
 from app.routers.pitches import router as pitches_router
 from app.routers.clubhouse import router as clubhouse_router
 from app.routers.notifications import router as notifications_router
+from app.routers.facility_requests import router as facility_requests_router, admin_router as facility_requests_admin_router
 
 
 @asynccontextmanager
@@ -108,6 +109,8 @@ app.include_router(pitches_router, prefix="/api/v1")
 app.include_router(clubhouse_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(notifications_router, prefix="/api/v1")
+app.include_router(facility_requests_router, prefix="/api/v1")
+app.include_router(facility_requests_admin_router, prefix="/api/v1")
 
 
 @app.get("/", tags=["Health"])

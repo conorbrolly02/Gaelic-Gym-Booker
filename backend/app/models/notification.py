@@ -20,6 +20,9 @@ class NotificationType(str, enum.Enum):
     MEMBERSHIP_APPROVED = "MEMBERSHIP_APPROVED"
     MEMBERSHIP_SUSPENDED = "MEMBERSHIP_SUSPENDED"
     MEMBERSHIP_REACTIVATED = "MEMBERSHIP_REACTIVATED"
+    FACILITY_REQUEST_SUBMITTED = "FACILITY_REQUEST_SUBMITTED"
+    FACILITY_REQUEST_APPROVED = "FACILITY_REQUEST_APPROVED"
+    FACILITY_REQUEST_REJECTED = "FACILITY_REQUEST_REJECTED"
 
 
 class Notification(Base):
@@ -57,6 +60,13 @@ class Notification(Base):
         ForeignKey("bookings.id", ondelete="SET NULL"),
         nullable=True,
         comment="Related booking (if applicable)",
+    )
+
+    facility_request_id = Column(
+        GUID,
+        ForeignKey("facility_requests.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Related facility request (if applicable)",
     )
 
     is_read = Column(

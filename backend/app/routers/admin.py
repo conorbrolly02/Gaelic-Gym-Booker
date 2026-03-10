@@ -29,6 +29,7 @@ from app.models.user import User
 from app.models.member import MembershipStatus
 from app.models.booking import BookingStatus
 from app.models.notification import Notification, NotificationType
+from app.services.email_service import email_service
 
 
 def booking_error_response(error: BookingError, status_code: int = 409) -> JSONResponse:
@@ -207,6 +208,14 @@ async def approve_member(
         )
         await db.commit()
 
+        # Send email notification to the member
+        await email_service.send_membership_approved(
+            user_email=member.user.email,
+            user_name=member.full_name,
+            user_role=member.user.role.value,
+            approved_by_name=admin.member.full_name if admin.member else admin.email,
+        )
+
         return {
             "id": str(member.id),
             "membership_status": member.membership_status.value,
@@ -241,13 +250,30 @@ async def suspend_member(
     
     try:
         member = await service.suspend_member(member_id)
-        
+
+        # Create in-app notification
+        await _notify(
+            db=db,
+            user_id=member.user_id,
+            notification_type=NotificationType.MEMBERSHIP_SUSPENDED,
+            title="Membership Suspended",
+            message="Your membership has been suspended. Please contact administrators for more information.",
+        )
+        await db.commit()
+
+        # Send email notification to the member
+        await email_service.send_membership_suspended(
+            user_email=member.user.email,
+            user_name=member.full_name,
+            suspended_by_name=admin.member.full_name if admin.member else admin.email,
+        )
+
         return {
             "id": str(member.id),
             "membership_status": member.membership_status.value,
             "message": "Member suspended",
         }
-    
+
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -322,13 +348,30 @@ async def reactivate_member(
 
     try:
         member = await service.reactivate_member(member_id)
-        
+
+        # Create in-app notification
+        await _notify(
+            db=db,
+            user_id=member.user_id,
+            notification_type=NotificationType.MEMBERSHIP_REACTIVATED,
+            title="Membership Reactivated",
+            message="Your membership has been reactivated. You can now book facilities again!",
+        )
+        await db.commit()
+
+        # Send email notification to the member
+        await email_service.send_membership_reactivated(
+            user_email=member.user.email,
+            user_name=member.full_name,
+            reactivated_by_name=admin.member.full_name if admin.member else admin.email,
+        )
+
         return {
             "id": str(member.id),
             "membership_status": member.membership_status.value,
             "message": "Member reactivated",
         }
-    
+
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
