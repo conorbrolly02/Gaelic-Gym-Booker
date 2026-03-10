@@ -849,7 +849,7 @@ export default function DashboardPage() {
                 </svg>
               </button>
 
-              {/* Pitches & Ball Wall - Only for Coaches and Admins */}
+              {/* Pitches - Only for Coaches and Admins */}
               {(isCoach || isAdmin) && (
                 <>
                   {/* Main Pitch */}
@@ -862,7 +862,20 @@ export default function DashboardPage() {
                   >
                     <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
                       <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                        {/* Pitch boundary */}
+                        <rect x="1" y="5" width="22" height="14" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                        {/* Center line */}
+                        <line x1="12" y1="5" x2="12" y2="19" strokeWidth={1.5} />
+                        {/* Left goal box */}
+                        <rect x="1" y="9" width="2.5" height="6" strokeWidth={1.5} />
+                        {/* Right goal box */}
+                        <rect x="20.5" y="9" width="2.5" height="6" strokeWidth={1.5} />
+                        {/* Left D arc */}
+                        <path d="M 5.5 10 A 3 3 0 0 1 5.5 14" strokeWidth={1.5} strokeLinecap="round" />
+                        {/* Right D arc */}
+                        <path d="M 18.5 10 A 3 3 0 0 0 18.5 14" strokeWidth={1.5} strokeLinecap="round" />
+                        {/* Center spot */}
+                        <circle cx="12" cy="12" r="0.75" fill="currentColor" stroke="none" />
                       </svg>
                     </div>
                     <div className="flex-1 text-left">
@@ -884,7 +897,20 @@ export default function DashboardPage() {
                   >
                     <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
                       <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                        {/* Pitch boundary */}
+                        <rect x="1" y="5" width="22" height="14" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                        {/* Center line */}
+                        <line x1="12" y1="5" x2="12" y2="19" strokeWidth={1.5} />
+                        {/* Left goal box */}
+                        <rect x="1" y="9" width="2.5" height="6" strokeWidth={1.5} />
+                        {/* Right goal box */}
+                        <rect x="20.5" y="9" width="2.5" height="6" strokeWidth={1.5} />
+                        {/* Left D arc */}
+                        <path d="M 5.5 10 A 3 3 0 0 1 5.5 14" strokeWidth={1.5} strokeLinecap="round" />
+                        {/* Right D arc */}
+                        <path d="M 18.5 10 A 3 3 0 0 0 18.5 14" strokeWidth={1.5} strokeLinecap="round" />
+                        {/* Center spot */}
+                        <circle cx="12" cy="12" r="0.75" fill="currentColor" stroke="none" />
                       </svg>
                     </div>
                     <div className="flex-1 text-left">
@@ -895,30 +921,30 @@ export default function DashboardPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </button>
-
-                  {/* Ball Wall */}
-                  <button
-                    onClick={() => {
-                      setShowFacilityModal(false);
-                      router.push("/dashboard/ball-wall");
-                    }}
-                    className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all group"
-                  >
-                    <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
-                      <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-                      </svg>
-                    </div>
-                    <div className="flex-1 text-left">
-                      <h4 className="font-semibold text-gray-900">Ball Wall</h4>
-                      <p className="text-sm text-gray-600">Book ball wall practice time</p>
-                    </div>
-                    <svg className="w-5 h-5 text-gray-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
                 </>
               )}
+
+              {/* Ball Wall - Available to all users */}
+              <button
+                onClick={() => {
+                  setShowFacilityModal(false);
+                  router.push("/dashboard/ball-wall");
+                }}
+                className="w-full flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-sky-500 hover:bg-sky-50 transition-all group"
+              >
+                <div className="w-12 h-12 bg-sky-100 rounded-lg flex items-center justify-center group-hover:bg-sky-200 transition-colors">
+                  <svg className="w-6 h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1 text-left">
+                  <h4 className="font-semibold text-gray-900">Ball Wall</h4>
+                  <p className="text-sm text-gray-600">Book ball wall practice time</p>
+                </div>
+                <svg className="w-5 h-5 text-gray-400 group-hover:text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
 
               {/* Clubhouse */}
               <button

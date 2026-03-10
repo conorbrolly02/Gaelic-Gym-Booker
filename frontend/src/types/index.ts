@@ -209,6 +209,7 @@ export interface PendingBooking {
   start_time: string;
   end_time: string;
   party_size: number;
+  notes?: string;
   created_at: string;
 }
 
@@ -275,4 +276,27 @@ export interface EditBookingRequest {
  */
 export interface ApiError {
   detail: string;
+}
+
+/**
+ * Notification types
+ */
+export type NotificationType =
+  | "BOOKING_APPROVED"
+  | "BOOKING_REJECTED"
+  | "MEMBERSHIP_APPROVED"
+  | "MEMBERSHIP_SUSPENDED"
+  | "MEMBERSHIP_REACTIVATED";
+
+/**
+ * User notification
+ */
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  booking_id: string | null;
+  is_read: boolean;
+  created_at: string;
 }

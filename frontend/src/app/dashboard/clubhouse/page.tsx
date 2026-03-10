@@ -3,7 +3,7 @@
 /**
  * Clubhouse Booking Page
  *
- * Allows members to book clubhouse rooms including:
+ * Allows members and coaches to book clubhouse rooms including:
  * - Committee Room
  * - Kitchen
  * - Changing Rooms 1-4
@@ -13,17 +13,29 @@
  * Features:
  * - Interactive SVG floor plan
  * - Multi-room selection
- * - Time slot booking
+ * - Time slot booking with admin-approval flow
  * - Visual feedback for selected rooms
+ * - My Bookings section showing pending and confirmed reservations
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import ClubhousePlan from "@/components/ClubhousePlan";
 import { useAuth } from "@/context/AuthContext";
 import { clubhouseApi } from "@/lib/api";
 
+interface ClubhouseBooking {
+  id: string;
+  resource_name: string;
+  start_time: string;
+  end_time: string;
+  status: string;
+  purpose?: string;
+  contact_name?: string;
+  created_at: string;
+}
+
 export default function ClubhousePage() {
-  const { member } = useAuth();
+  const { member, isAdmin } = useAuth();
   const [selectedRooms, setSelectedRooms] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split("T")[0]
@@ -38,6 +50,8 @@ export default function ClubhousePage() {
 
   const [rooms, setRooms] = useState<Record<string, { id: string; name: string }>>({});
   const [loading, setLoading] = useState(true);
+  const [myBookings, setMyBookings] = useState<ClubhouseBooking[]>([]);
+  const [loadingBookings, setLoadingBookings] = useState(false);
 
   const roomIdMap: Record<string, string> = {
     Committee: "Committee Room",
@@ -50,6 +64,18 @@ export default function ClubhousePage() {
     Room2: "Room 2",
   };
 
+  const loadMyBookings = useCallback(async () => {
+    setLoadingBookings(true);
+    try {
+      const data = await clubhouseApi.getMemberBookings({ upcoming_only: false });
+      setMyBookings(data);
+    } catch {
+      // silently fail for bookings section
+    } finally {
+      setLoadingBookings(false);
+    }
+  }, []);
+
   // Load rooms from backend on mount
   useEffect(() => {
     async function loadRooms() {
@@ -57,7 +83,6 @@ export default function ClubhousePage() {
         const roomsData = await clubhouseApi.getRooms();
         const roomsMap: Record<string, { id: string; name: string }> = {};
         roomsData.forEach((room: any) => {
-          // Find the UI key for this room name
           const uiKey = Object.entries(roomIdMap).find(([_, name]) => name === room.name)?.[0];
           if (uiKey) {
             roomsMap[uiKey] = { id: room.id, name: room.name };
@@ -71,15 +96,14 @@ export default function ClubhousePage() {
       }
     }
     loadRooms();
-  }, []);
+    loadMyBookings();
+  }, [loadMyBookings]);
 
   const handleRoomSelect = (roomId: string, roomName: string) => {
     setSelectedRooms((prev) => {
       if (prev.includes(roomId)) {
-        // Deselect room
         return prev.filter((id) => id !== roomId);
       } else {
-        // Select room
         return [...prev, roomId];
       }
     });
@@ -103,7 +127,6 @@ export default function ClubhousePage() {
     setError(null);
     setSuccess(null);
 
-    // Validation
     if (!startTime || !endTime) {
       setError("Please select start and end times");
       return;
@@ -125,7 +148,6 @@ export default function ClubhousePage() {
     setSubmitting(true);
 
     try {
-      // Get room IDs from selected room keys
       const roomIds = selectedRooms.map((roomKey) => rooms[roomKey]?.id).filter(Boolean);
 
       if (roomIds.length === 0) {
@@ -133,11 +155,9 @@ export default function ClubhousePage() {
         return;
       }
 
-      // Create ISO datetime strings
       const startDateTime = `${selectedDate}T${startTime}:00`;
       const endDateTime = `${selectedDate}T${endTime}:00`;
 
-      // Call API to create booking
       await clubhouseApi.createBooking({
         room_ids: roomIds,
         start_time: startDateTime,
@@ -146,26 +166,50 @@ export default function ClubhousePage() {
         contact_name: member?.full_name || null,
       });
 
+      const roomNames = selectedRooms
+        .map((k) => rooms[k]?.name || roomIdMap[k])
+        .join(", ");
+
       setSuccess(
-        `Successfully booked ${selectedRooms.length} room${
-          selectedRooms.length > 1 ? "s" : ""
-        } for ${selectedDate} from ${startTime} to ${endTime}`
+        isAdmin
+          ? `Booking confirmed for ${roomNames} on ${selectedDate} from ${startTime} to ${endTime}.`
+          : `Booking request submitted for ${roomNames} on ${selectedDate} from ${startTime} to ${endTime}. An admin will review and approve your request.`
       );
 
-      // Reset form
       setSelectedRooms([]);
       setStartTime("");
       setEndTime("");
       setPurpose("");
       setShowBookingForm(false);
 
-      // Clear success message after 5 seconds
-      setTimeout(() => setSuccess(null), 5000);
+      // Refresh bookings list
+      await loadMyBookings();
+
+      setTimeout(() => setSuccess(null), 8000);
     } catch (err: any) {
       setError(err.message || "Failed to create booking");
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleCancelBooking = async (bookingId: string) => {
+    try {
+      await clubhouseApi.cancelBooking(bookingId);
+      await loadMyBookings();
+    } catch (err: any) {
+      setError(err.message || "Failed to cancel booking");
+    }
+  };
+
+  const formatDateTime = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   if (loading) {
@@ -189,25 +233,33 @@ export default function ClubhousePage() {
         </p>
       </div>
 
+      {/* Admin auto-approval notice / member approval notice */}
+      {!isAdmin && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+          <svg className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-amber-900">Admin approval required</p>
+            <p className="text-sm text-amber-800 mt-0.5">
+              Clubhouse room bookings must be reviewed and approved by an administrator before they are confirmed.
+              You will receive a notification once your request has been processed.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Success Message */}
       {success && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="flex items-start gap-3">
-            <svg
-              className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
+            <svg className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
-              <h3 className="text-sm font-semibold text-green-900">Booking Successful</h3>
+              <h3 className="text-sm font-semibold text-green-900">
+                {isAdmin ? "Booking Confirmed" : "Request Submitted"}
+              </h3>
               <p className="text-sm text-green-800 mt-1">{success}</p>
             </div>
           </div>
@@ -218,18 +270,8 @@ export default function ClubhousePage() {
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <div className="flex items-start gap-3">
-            <svg
-              className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
+            <svg className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
               <h3 className="text-sm font-semibold text-red-900">Error</h3>
@@ -247,8 +289,9 @@ export default function ClubhousePage() {
             <ol className="list-decimal list-inside space-y-2 text-gray-700">
               <li>Click on one or more rooms on the floor plan below to select them</li>
               <li>Selected rooms will be highlighted in blue with a checkmark</li>
-              <li>Click "Continue to Booking" to set the date and time</li>
+              <li>Click &quot;Continue to Booking&quot; to set the date and time</li>
               <li>Fill in the booking details and submit</li>
+              {!isAdmin && <li>Your request will be sent to an admin for approval</li>}
             </ol>
           </div>
 
@@ -265,7 +308,7 @@ export default function ClubhousePage() {
             </div>
           </div>
 
-          {/* Selected Rooms Summary - Moved below floor plan */}
+          {/* Selected Rooms Summary */}
           {selectedRooms.length > 0 && (
             <div className="card bg-blue-50 border-blue-200">
               <h3 className="text-sm font-semibold text-blue-900 mb-2">
@@ -284,12 +327,7 @@ export default function ClubhousePage() {
                       aria-label={`Remove ${rooms[roomKey]?.name || roomIdMap[roomKey]}`}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M6 18L18 6M6 6l12 12"
-                        />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
                   </span>
@@ -324,12 +362,7 @@ export default function ClubhousePage() {
                 className="text-gray-600 hover:text-gray-900 flex items-center gap-2"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M10 19l-7-7m0 0l7-7m-7 7h18"
-                  />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
                 Back to Floor Plan
               </button>
@@ -414,7 +447,7 @@ export default function ClubhousePage() {
                   required
                 />
                 <p className="text-sm text-gray-500 mt-1">
-                  Please provide a brief description of what the rooms will be used for
+                  Please provide a brief description — admins use this to review your request
                 </p>
               </div>
 
@@ -427,7 +460,7 @@ export default function ClubhousePage() {
                   type="text"
                   id="contact"
                   defaultValue={member?.full_name || ""}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#903838]"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#903838]"
                   readOnly
                 />
               </div>
@@ -450,13 +483,86 @@ export default function ClubhousePage() {
                       : "bg-[#903838] text-white hover:bg-[#7d2f2f]"
                   }`}
                 >
-                  {submitting ? "Creating Booking..." : "Confirm Booking"}
+                  {submitting
+                    ? "Submitting..."
+                    : isAdmin
+                    ? "Confirm Booking"
+                    : "Submit for Approval"}
                 </button>
               </div>
             </form>
           </div>
         </>
       )}
+
+      {/* My Bookings Section */}
+      <div className="card">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">My Room Bookings</h3>
+        {loadingBookings ? (
+          <p className="text-sm text-gray-500">Loading bookings...</p>
+        ) : myBookings.length === 0 ? (
+          <p className="text-sm text-gray-500">You have no clubhouse bookings yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {myBookings.map((booking) => {
+              const isPending = booking.status === "PENDING_APPROVAL";
+              const isCancelled = booking.status === "CANCELLED";
+              return (
+                <div
+                  key={booking.id}
+                  className={`border rounded-lg p-4 flex items-start justify-between gap-4 ${
+                    isPending
+                      ? "border-amber-200 bg-amber-50"
+                      : isCancelled
+                      ? "border-gray-200 bg-gray-50 opacity-60"
+                      : "border-green-200 bg-green-50"
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-gray-900 text-sm">
+                        {booking.resource_name}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          isPending
+                            ? "bg-amber-100 text-amber-800"
+                            : isCancelled
+                            ? "bg-gray-200 text-gray-600"
+                            : "bg-green-100 text-green-800"
+                        }`}
+                      >
+                        {isPending ? "Pending Approval" : isCancelled ? "Cancelled" : "Confirmed"}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {formatDateTime(booking.start_time)} –{" "}
+                      {new Date(booking.end_time).toLocaleTimeString("en-GB", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                    {booking.purpose && (
+                      <p className="text-sm text-gray-500 mt-0.5 truncate">
+                        {booking.purpose}
+                      </p>
+                    )}
+                  </div>
+                  {!isCancelled && (
+                    <button
+                      onClick={() => handleCancelBooking(booking.id)}
+                      className="text-xs text-red-600 hover:text-red-800 underline whitespace-nowrap flex-shrink-0 mt-0.5"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+

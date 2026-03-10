@@ -254,25 +254,6 @@ export default function MonthlyCalendar({ onDayClick, showAllBookings = false }:
           </div>
         </div>
 
-        {/* Legend */}
-        <div className="flex flex-wrap gap-3 text-xs text-white/90">
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-blue-600 border border-white/20"></div>
-            <span className="font-medium">Gym</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-green-600 border border-white/20"></div>
-            <span className="font-medium">Main Pitch</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-orange-600 border border-white/20"></div>
-            <span className="font-medium">Minor Pitch</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-sky-500 border border-white/20"></div>
-            <span className="font-medium">Ball Wall</span>
-          </div>
-        </div>
       </div>
 
       {/* Day of Week Headers */}

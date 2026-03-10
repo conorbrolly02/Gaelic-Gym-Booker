@@ -12,8 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.auth.dependencies import get_current_member
+from app.auth.dependencies import get_current_member, get_current_active_user
 from app.models.member import Member
+from app.models.user import User
 from app.models.booking import Booking
 from app.services.clubhouse_service import ClubhouseService
 from app.schemas.clubhouse import (
@@ -128,13 +129,15 @@ async def check_availability(
 async def create_booking(
     booking_data: ClubhouseBookingCreate,
     db: AsyncSession = Depends(get_db),
-    member: Member = Depends(get_current_member)
+    member: Member = Depends(get_current_member),
+    user: User = Depends(get_current_active_user)
 ):
     """
     Create a booking for one or more clubhouse rooms.
 
     All rooms must be available or the entire booking fails.
     Returns a list of created bookings (one per room).
+    Coaches and members require admin approval; admin bookings are auto-confirmed.
     """
     service = ClubhouseService(db)
 
@@ -146,7 +149,8 @@ async def create_booking(
             end_time=booking_data.end_time,
             purpose=booking_data.purpose,
             contact_name=booking_data.contact_name,
-            created_by=member.user_id
+            created_by=member.user_id,
+            user_role=user.role
         )
 
         return [_booking_to_response(booking) for booking in bookings]

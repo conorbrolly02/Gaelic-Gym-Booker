@@ -134,9 +134,9 @@ class ClubhouseService:
 
         Note:
             Booking status is set based on user role:
-            - ADMIN: Always CONFIRMED
-            - COACH: PENDING_APPROVAL for clubhouse rooms
-            - MEMBER: CONFIRMED (members can book without approval)
+            - ADMIN: Always CONFIRMED (auto-approved)
+            - COACH: PENDING_APPROVAL (requires admin approval)
+            - MEMBER: PENDING_APPROVAL (requires admin approval)
         """
         # Validate time range
         if end_time <= start_time:
@@ -174,15 +174,12 @@ class ClubhouseService:
                 f"The following rooms are not available: {', '.join(room_names)}"
             )
 
-        # Determine booking status based on user role
-        # Coaches need approval for clubhouse rooms
-        # Admins are auto-approved
-        # Members are auto-approved for clubhouse rooms
-        if user_role == UserRole.COACH:
-            booking_status = BookingStatus.PENDING_APPROVAL
-        else:
-            # Admin or Member (defaults to confirmed)
+        # Determine booking status based on user role.
+        # Only admins are auto-approved; coaches and members need admin approval.
+        if user_role == UserRole.ADMIN:
             booking_status = BookingStatus.CONFIRMED
+        else:
+            booking_status = BookingStatus.PENDING_APPROVAL
 
         # Create bookings for all rooms
         bookings = []
@@ -216,11 +213,11 @@ class ClubhouseService:
         member_id: UUID,
         upcoming_only: bool = False
     ) -> List[Booking]:
-        """Get all clubhouse bookings for a member."""
+        """Get all clubhouse bookings for a member (confirmed and pending)."""
         query = select(Booking).where(
             and_(
                 Booking.member_id == member_id,
-                Booking.status == BookingStatus.CONFIRMED
+                Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.PENDING_APPROVAL])
             )
         ).join(Resource).where(Resource.type == ResourceType.ROOM)
 

@@ -31,6 +31,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { adminApi } from "@/lib/api";
 import ApprovalsModal from "./ApprovalsModal";
+import NotificationsDropdown from "./NotificationsDropdown";
 
 /** Minimal interface for items we link to */
 interface NavLinkItem {
@@ -327,6 +328,9 @@ export default function Navigation() {
 
           {/* ------------------------- RIGHT: USER DROPDOWN --------------------- */}
           <div className="hidden md:flex md:items-center md:space-x-4">
+            {/* Notifications Bell (all authenticated users) */}
+            {isAuthenticated && <NotificationsDropdown />}
+
             {/* Approvals Button (Admins only) */}
             {isAdmin && (
               <button
@@ -543,6 +547,13 @@ export default function Navigation() {
             )}
 
             <hr className="my-2 border-white/20" />
+
+            {/* NOTIFICATIONS (all authenticated users - Mobile) */}
+            {isAuthenticated && (
+              <div className="px-3 py-2">
+                <NotificationsDropdown />
+              </div>
+            )}
 
             {/* APPROVALS BUTTON (Admins only - Mobile) */}
             {isAdmin && (

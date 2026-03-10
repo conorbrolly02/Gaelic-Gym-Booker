@@ -258,6 +258,11 @@ export default function ApprovalsModal({
                               minute: "2-digit",
                             })}
                           </p>
+                          {booking.notes && (
+                            <p className="text-sm text-gray-600 mt-1">
+                              <span className="font-medium">Purpose:</span> {booking.notes}
+                            </p>
+                          )}
                           <p className="text-xs text-gray-500">
                             Party size: {booking.party_size}
                           </p>

@@ -28,6 +28,7 @@ from app.auth.dependencies import require_admin
 from app.models.user import User
 from app.models.member import MembershipStatus
 from app.models.booking import BookingStatus
+from app.models.notification import Notification, NotificationType
 
 
 def booking_error_response(error: BookingError, status_code: int = 409) -> JSONResponse:
@@ -39,6 +40,25 @@ def booking_error_response(error: BookingError, status_code: int = 409) -> JSONR
             "error_code": error.code.value,
         }
     )
+
+
+async def _notify(
+    db: AsyncSession,
+    user_id,
+    notification_type: NotificationType,
+    title: str,
+    message: str,
+    booking_id=None,
+) -> None:
+    """Add a notification record to the session (caller must commit)."""
+    notif = Notification(
+        user_id=user_id,
+        type=notification_type,
+        title=title,
+        message=message,
+        booking_id=booking_id,
+    )
+    db.add(notif)
 
 router = APIRouter(
     prefix="/admin",
@@ -177,7 +197,16 @@ async def approve_member(
             member_id=member_id,
             approved_by=admin.id,
         )
-        
+
+        await _notify(
+            db=db,
+            user_id=member.user_id,
+            notification_type=NotificationType.MEMBERSHIP_APPROVED,
+            title="Membership Approved",
+            message="Your membership has been approved. You can now book facilities.",
+        )
+        await db.commit()
+
         return {
             "id": str(member.id),
             "membership_status": member.membership_status.value,
@@ -527,6 +556,18 @@ async def approve_booking(
         )
 
     booking.status = BookingStatus.CONFIRMED
+
+    resource_name = booking.resource.name if booking.resource else "Facility"
+    date_str = booking.start_time.strftime("%a, %d %b %Y at %H:%M")
+    await _notify(
+        db=db,
+        user_id=booking.member.user_id,
+        notification_type=NotificationType.BOOKING_APPROVED,
+        title="Booking Approved",
+        message=f"Your {resource_name} booking on {date_str} has been confirmed.",
+        booking_id=booking.id,
+    )
+
     await db.commit()
     await db.refresh(booking)
 
@@ -556,10 +597,34 @@ async def admin_cancel_booking(
     service = BookingService(db)
 
     try:
+        # Load booking first to check if it's a pending approval being rejected
+        existing = await service.get_booking_by_id(booking_id)
+        was_pending = existing and existing.status == BookingStatus.PENDING_APPROVAL
+        notif_data = None
+        if was_pending and existing.member:
+            resource_name = existing.resource.name if existing.resource else "Facility"
+            date_str = existing.start_time.strftime("%a, %d %b %Y at %H:%M")
+            notif_data = {
+                "user_id": existing.member.user_id,
+                "message": f"Your {resource_name} booking request for {date_str} has been declined.",
+            }
+
         booking = await service.cancel_booking(
             booking_id=booking_id,
             cancelled_by=admin.id,
         )
+
+        # Create rejection notification (cancel_booking already committed; use new commit)
+        if notif_data:
+            await _notify(
+                db=db,
+                user_id=notif_data["user_id"],
+                notification_type=NotificationType.BOOKING_REJECTED,
+                title="Booking Request Declined",
+                message=notif_data["message"],
+                booking_id=booking.id,
+            )
+            await db.commit()
 
         return {
             "id": str(booking.id),
@@ -689,6 +754,7 @@ async def get_pending_approvals(
             "start_time": booking.start_time,
             "end_time": booking.end_time,
             "party_size": booking.party_size,
+            "notes": booking.notes,
             "created_at": booking.created_at,
         })
 

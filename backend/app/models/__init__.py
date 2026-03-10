@@ -12,6 +12,7 @@ from app.models.user import User
 from app.models.member import Member
 from app.models.booking import Booking
 from app.models.recurring import RecurringPattern
+from app.models.notification import Notification
 
 # Export all models for easy importing elsewhere
-__all__ = ["User", "Member", "Booking", "RecurringPattern"]
+__all__ = ["User", "Member", "Booking", "RecurringPattern", "Notification"]

@@ -99,6 +99,7 @@ async def init_db():
         # IMPORTANT: import every model module so tables are registered on Base.metadata
         from app.models import user, member, booking, recurring
         from app.models import resource, blackout, audit, recurring_exception  # NEW models
+        from app.models import notification  # notification table
 
         # Create tables (no-op for existing tables)
         await conn.run_sync(Base.metadata.create_all)
